@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+// Writes web/pdf/src/pdf_fontdata.rs: the Adobe Glyph List (glyph name ->
+// Unicode), the widths of the 14 standard fonts with the built-in encodings
+// of their AFM files (StandardEncoding, Symbol, ZapfDingbats), and the
+// WinAnsi, MacRoman and PDFDoc encodings as glyph names.
+//
+// Sources, fetched when the tool runs:
+//   glyphlist.txt   adobe-type-tools/agl-aglfn (BSD-3-Clause)
+//   <font>.afm      the Adobe Core 14 AFM files, as Apache PDFBox ships them
+//                   (Adobe's license allows them to be redistributed)
+//
+//   node web/pdf/tools/gen-fontdata.js
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const AGL = 'https://raw.githubusercontent.com/adobe-type-tools/agl-aglfn/4036a9ca80a62f64f9de4f7321a9a045ad0ecfd6/glyphlist.txt';
+const AFM = 'https://raw.githubusercontent.com/apache/pdfbox/3.0.3/pdfbox/src/main/resources/org/apache/pdfbox/resources/afm/';
+const FONTS = ['Courier', 'Courier-Bold', 'Courier-BoldOblique', 'Courier-Oblique', 'Helvetica', 'Helvetica-Bold',
+  'Helvetica-BoldOblique', 'Helvetica-Oblique', 'Times-Roman', 'Times-Bold', 'Times-BoldItalic', 'Times-Italic',
+  'Symbol', 'ZapfDingbats'];
+
+async function get(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ': ' + r.status);
+  return r.text();
+}
+
+function afm(text) {
+  const out = { widths: [], codes: [], flags: {} };
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^(\w+) (.*)$/.exec(line);
+    if (m && ['Ascender', 'Descender', 'CapHeight', 'XHeight', 'ItalicAngle', 'FontBBox', 'IsFixedPitch'].includes(m[1])) out.flags[m[1]] = m[2].trim();
+    if (!line.startsWith('C ')) continue;
+    const c = /C (-?\d+) ;\s*WX (\d+) ;\s*N (\S+)/.exec(line);
+    if (!c) continue;
+    out.widths.push(c[3] + ' ' + c[2]);
+    if (+c[1] >= 0) out.codes.push(c[1] + ' ' + c[3]);
+  }
+  return out;
+}
+
+// windows-1252 0x80-0x9F (the rest of 0xA0-0xFF is Latin-1)
+const CP1252 = [0x20AC, 0, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017D, 0,
+  0, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0, 0x017E, 0x0178];
+// PDFDocEncoding 0x18-0x1F and 0x80-0xA0 (ISO 32000-1 Annex D.2)
+const PDFDOC_LOW = [0x02D8, 0x02C7, 0x02C6, 0x02D9, 0x02DD, 0x02DB, 0x02DA, 0x02DC];
+const PDFDOC_HIGH = [0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044, 0x2039, 0x203A, 0x2212, 0x2030, 0x201E,
+  0x201C, 0x201D, 0x2018, 0x2019, 0x201A, 0x2122, 0xFB01, 0xFB02, 0x0141, 0x0152, 0x0160, 0x0178, 0x017D, 0x0131, 0x0142,
+  0x0153, 0x0161, 0x017E, 0, 0x20AC];
+
+function chunks(s, n) {
+  const out = [];
+  for (let i = 0; i < s.length; i += n) {
+    let j = Math.min(s.length, i + n);
+    out.push(s.slice(i, j));
+  }
+  return out;
+}
+
+function rsStr(s) {
+  return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
+function fn(name, text, doc) {
+  const parts = chunks(text, 20000).map((c) => '    s.push_str(' + rsStr(c) + ');');
+  return `/// ${doc}\npub fn ${name}() -> String {\n    let mut s = String::new();\n${parts.join('\n')}\n    s\n}\n`;
+}
+
+(async () => {
+  const aglText = await get(AGL);
+  const agl = [];
+  const byUni = new Map();
+  for (const line of aglText.split(/\r?\n/)) {
+    if (!line || line.startsWith('#')) continue;
+    const [name, codes] = line.split(';');
+    agl.push(name + ' ' + codes.trim());
+    const cs = codes.trim().split(' ');
+    if (cs.length === 1) {
+      const u = parseInt(cs[0], 16);
+      if (!byUni.has(u)) byUni.set(u, name);
+    }
+  }
+  // the standard names, where the AGL has several for one character
+  const prefer = { 0x20: 'space', 0x2D: 'hyphen', 0xA0: 'space', 0xAD: 'hyphen', 0x27: 'quotesingle', 0x60: 'grave',
+    0x2C6: 'circumflex', 0x2DC: 'tilde', 0x394: 'Delta', 0x3A9: 'Omega', 0x2215: 'fraction', 0x2044: 'fraction', 0xB5: 'mu',
+    0x2219: 'periodcentered', 0xAF: 'macron', 0x2212: 'minus', 0xB7: 'periodcentered' };
+  const nameOf = (u) => (u === 0 ? '' : prefer[u] || byUni.get(u) || 'uni' + u.toString(16).toUpperCase().padStart(4, '0'));
+  const win = [];
+  const mac = [];
+  const pdfdoc = [];
+  const macDec = new TextDecoder('macintosh');
+  for (let c = 0; c < 256; c++) {
+    let wu = c;
+    if (c >= 0x80 && c < 0xA0) wu = CP1252[c - 0x80];
+    if (c < 32 || c === 127) wu = 0;
+    win.push(nameOf(wu));
+    let mu = c < 128 ? c : macDec.decode(Uint8Array.from([c])).codePointAt(0);
+    if (c < 32 || c === 127) mu = 0;
+    mac.push(nameOf(mu));
+    let pu = c;
+    if (c >= 0x18 && c < 0x20) pu = PDFDOC_LOW[c - 0x18];
+    else if (c < 32 || c === 127) pu = 0;
+    else if (c >= 0x80 && c <= 0xA0) pu = PDFDOC_HIGH[c - 0x80];
+    pdfdoc.push(nameOf(pu));
+  }
+  // WinAnsi: the bullet in the unused places (ISO 32000-1 D.2, note 6)
+  for (const c of [0x7F, 0x81, 0x8D, 0x8F, 0x90, 0x9D]) win[c] = 'bullet';
+  let out = `//! GENERATED by web/pdf/tools/gen-fontdata.js: do not edit.
+//! The Adobe Glyph List (adobe-type-tools/agl-aglfn, BSD-3-Clause), the
+//! metrics of the 14 standard fonts from Adobe's Core 14 AFM files, and the
+//! simple-font encodings of ISO 32000-1 Annex D as glyph names.
+
+`;
+  out += fn('agl', agl.join(';'), 'glyph name -> Unicode: "name XXXX[ XXXX];..."');
+  out += '\n' + fn('win_ansi', win.join(' '), 'WinAnsiEncoding: 256 glyph names separated by spaces ("" for none)');
+  out += '\n' + fn('mac_roman', mac.join(' '), 'MacRomanEncoding');
+  out += '\n' + fn('pdf_doc', pdfdoc.join(' '), 'PDFDocEncoding');
+  const names = [];
+  for (const f of FONTS) {
+    const a = afm(await get(AFM + f + '.afm'));
+    const id = f.toLowerCase().replace(/-/g, '_');
+    names.push(f);
+    const fl = a.flags;
+    out += '\n' + fn('w_' + id, a.widths.join(';'), `${f}: "glyph width;..." (1/1000 em); ${fl.FontBBox || ''}, ascender ${fl.Ascender || 0}, descender ${fl.Descender || 0}`);
+    if (f === 'Helvetica') out += '\n' + fn('standard_encoding', a.codes.join(';'), 'StandardEncoding: "code glyph;..."');
+    if (f === 'Symbol' || f === 'ZapfDingbats') out += '\n' + fn('enc_' + id, a.codes.join(';'), `the built-in encoding of ${f}`);
+  }
+  out += `\n/// The widths of standard font \`name\` (one of the 14), or "".\npub fn std_widths(name: &str) -> String {\n`;
+  for (const f of names) out += `    if name == ${rsStr(f)} {\n        return w_${f.toLowerCase().replace(/-/g, '_')}();\n    }\n`;
+  out += '    String::new()\n}\n';
+  const dst = path.join(__dirname, '..', 'src', 'pdf_fontdata.rs');
+  fs.writeFileSync(dst, out);
+  console.log('wrote', dst, out.length, 'bytes');
+})().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});
