@@ -1,0 +1,22 @@
+{
+  "corpus": "pdf.js test/pdfs @ cfab9b7",
+  "reference": "pdfjs-dist 4.10.38",
+  "files": 781,
+  "ref_opens": 768,
+  "open": 764,
+  "exceptions": 2,
+  "timeouts": 6,
+  "text_files": 504,
+  "text_pages": 575,
+  "text_exact_pages": 445,
+  "text_similarity": 0.8791,
+  "pixel_files": 761,
+  "pixels": 0.95,
+  "pixels_95": 594,
+  "ink": 0.7189,
+  "ink_90": 467,
+  "pixel_files_no_jpeg": 760,
+  "pixels_no_jpeg": 0.9499,
+  "ink_no_jpeg": 0.7188,
+  "ms_total": 1306632
+}
