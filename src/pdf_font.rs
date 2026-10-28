@@ -21,6 +21,7 @@ use crate::pdf_type1::Type1;
 /// Substitute font programs from the host: key "sans", "sans-bold",
 /// "sans-italic", "sans-bolditalic", the same for "serif" and "mono", then
 /// "symbol" and "dingbats". Each is a TrueType or Type 1 (pfb) file.
+#[derive(Clone)]
 pub struct FontFiles {
     pub keys: Vec<String>,
     pub data: Vec<Vec<u8>>,

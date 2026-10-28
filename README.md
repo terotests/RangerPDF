@@ -8,7 +8,7 @@ on rust, es6, kotlin, dart and swift (`SUITES=pdf web/test.sh`) and compared
 with pdf.js on pdf.js' own test corpus (`PARITY.md`). No pdf.js code is used;
 pdf.js is the reference for behaviour only.
 
-The desktop app (`desktop/app/MfdPdf.rgr`) shows a PDF's pages in the
+The desktop app (`desktop/app/pdf_view.rs`) shows a PDF's pages in the
 preview pane with it: each page is rendered at the width it is shown at and
 drawn as one image.
 
