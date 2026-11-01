@@ -1,13 +1,14 @@
-# The online viewer on GitHub Pages: viewer/build.sh's output pushed to the
-# gh-pages branch on every push to main (Settings > Pages: Deploy from a
-# branch, gh-pages, / (root)).
+# The online viewer on GitHub Pages (Settings > Pages: GitHub Actions):
+# viewer/build.sh's output deployed on every push to main.
 name: viewer-pages
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -20,13 +21,15 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           viewer/build.sh "$RUNNER_TEMP/site"
-          touch "$RUNNER_TEMP/site/.nojekyll"
-      - name: Push to gh-pages
-        run: |
-          cd "$RUNNER_TEMP/site"
-          git init -q -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "viewer from ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
