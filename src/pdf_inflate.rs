@@ -12,6 +12,9 @@ struct Bits {
     bit: i64,
     nbits: i64,
     eof: bool,
+    /// the output so far: a Ranger buffer grows as a field or local, not
+    /// through a `&mut Vec<u8>` parameter
+    out: Vec<u8>,
 }
 
 /// A canonical Huffman code: `counts[len]` codes of each length, `symbols`
@@ -91,14 +94,14 @@ const DBASE: [i64; 30] = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 
 const DEXT: [i64; 30] = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
 const CLORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
-fn codes(b: &mut Bits, src: &Vec<u8>, out: &mut Vec<u8>, lit: &Huff, dist: &Huff) -> bool {
+fn codes(b: &mut Bits, src: &Vec<u8>, lit: &Huff, dist: &Huff) -> bool {
     loop {
         let sym = decode_sym(b, src, lit);
         if sym < 0 {
             return false;
         }
         if sym < 256 {
-            out.push(sym as u8);
+            b.out.push(sym as u8);
         } else if sym == 256 {
             return true;
         } else {
@@ -112,14 +115,14 @@ fn codes(b: &mut Bits, src: &Vec<u8>, out: &mut Vec<u8>, lit: &Huff, dist: &Huff
                 return false;
             }
             let d = DBASE[ds as usize] + need(b, src, DEXT[ds as usize]);
-            if b.eof || (d as usize) > out.len() {
+            if b.eof || (d as usize) > b.out.len() {
                 return false;
             }
-            let start = out.len() - (d as usize);
+            let start = b.out.len() - (d as usize);
             let mut k: usize = 0;
             while k < (len as usize) {
-                let v = out[start + k];
-                out.push(v);
+                let v = b.out[start + k];
+                b.out.push(v);
                 k += 1;
             }
         }
@@ -128,30 +131,29 @@ fn codes(b: &mut Bits, src: &Vec<u8>, out: &mut Vec<u8>, lit: &Huff, dist: &Huff
 
 /// Raw deflate data from `start`.
 pub fn inflate_raw(src: &Vec<u8>, start: usize) -> Inflated {
-    let mut out: Vec<u8> = vec![];
-    let mut b = Bits { pos: start, bit: 0, nbits: 0, eof: false };
+    let mut b = Bits { pos: start, bit: 0, nbits: 0, eof: false, out: vec![] };
     loop {
         let last = need(&mut b, src, 1);
         let kind = need(&mut b, src, 2);
         if b.eof {
-            return Inflated { data: out, ok: false };
+            return Inflated { data: b.out, ok: false };
         }
         if kind == 0 {
             b.bit = 0;
             b.nbits = 0;
             if b.pos + 4 > src.len() {
-                return Inflated { data: out, ok: false };
+                return Inflated { data: b.out, ok: false };
             }
             let len = (src[b.pos] as usize) | ((src[b.pos + 1] as usize) << 8);
             b.pos += 4;
             let mut k: usize = 0;
             while k < len && b.pos < src.len() {
-                out.push(src[b.pos]);
+                b.out.push(src[b.pos]);
                 b.pos += 1;
                 k += 1;
             }
             if k < len {
-                return Inflated { data: out, ok: false };
+                return Inflated { data: b.out, ok: false };
             }
         } else if kind == 1 {
             let mut ll: Vec<i64> = vec![];
@@ -176,8 +178,8 @@ pub fn inflate_raw(src: &Vec<u8>, start: usize) -> Inflated {
             }
             let lit = build(&ll);
             let dist = build(&dl);
-            if !codes(&mut b, src, &mut out, &lit, &dist) {
-                return Inflated { data: out, ok: false };
+            if !codes(&mut b, src, &lit, &dist) {
+                return Inflated { data: b.out, ok: false };
             }
         } else if kind == 2 {
             let nlen = need(&mut b, src, 5) + 257;
@@ -195,7 +197,7 @@ pub fn inflate_raw(src: &Vec<u8>, start: usize) -> Inflated {
             while lens.len() < total {
                 let sym = decode_sym(&mut b, src, &clh);
                 if sym < 0 {
-                    return Inflated { data: out, ok: false };
+                    return Inflated { data: b.out, ok: false };
                 }
                 if sym < 16 {
                     lens.push(sym);
@@ -204,7 +206,7 @@ pub fn inflate_raw(src: &Vec<u8>, start: usize) -> Inflated {
                     let mut val: i64 = 0;
                     if sym == 16 {
                         if lens.is_empty() {
-                            return Inflated { data: out, ok: false };
+                            return Inflated { data: b.out, ok: false };
                         }
                         val = lens[lens.len() - 1];
                         rep = 3 + need(&mut b, src, 2);
@@ -233,14 +235,14 @@ pub fn inflate_raw(src: &Vec<u8>, start: usize) -> Inflated {
             }
             let lit = build(&ll);
             let dist = build(&dl);
-            if !codes(&mut b, src, &mut out, &lit, &dist) {
-                return Inflated { data: out, ok: false };
+            if !codes(&mut b, src, &lit, &dist) {
+                return Inflated { data: b.out, ok: false };
             }
         } else {
-            return Inflated { data: out, ok: false };
+            return Inflated { data: b.out, ok: false };
         }
         if last == 1 {
-            return Inflated { data: out, ok: true };
+            return Inflated { data: b.out, ok: true };
         }
     }
 }

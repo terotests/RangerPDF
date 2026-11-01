@@ -70,7 +70,9 @@ pub fn ascii85(src: &Vec<u8>) -> Vec<u8> {
         }
         group.push((c - 33) as i64);
         if group.len() == 5 {
-            push85(&mut out, &group, 4);
+            for b in bytes85(&group, 4).iter() {
+                out.push(*b);
+            }
             group = vec![];
         }
     }
@@ -79,12 +81,17 @@ pub fn ascii85(src: &Vec<u8>) -> Vec<u8> {
         while group.len() < 5 {
             group.push(84);
         }
-        push85(&mut out, &group, n);
+        for b in bytes85(&group, n).iter() {
+            out.push(*b);
+        }
     }
     out
 }
 
-fn push85(out: &mut Vec<u8>, g: &Vec<i64>, n: usize) {
+/// The first `n` bytes of a base-85 group. Helpers return new bytes: a
+/// Ranger buffer (`Vec<u8>`) cannot grow through a `&mut` parameter.
+fn bytes85(g: &Vec<i64>, n: usize) -> Vec<u8> {
+    let mut out: Vec<u8> = vec![];
     // as a float: the value can pass 2^31, past JavaScript's 32-bit bit operators
     let mut v: f64 = 0.0;
     for d in g.iter() {
@@ -102,6 +109,7 @@ fn push85(out: &mut Vec<u8>, g: &Vec<i64>, n: usize) {
         out.push(((bs[k] as i64) & 255) as u8);
         k += 1;
     }
+    out
 }
 
 pub fn run_length(src: &Vec<u8>) -> Vec<u8> {
@@ -182,7 +190,9 @@ pub fn lzw(src: &Vec<u8>, early: i64) -> Vec<u8> {
         }
         let start = out.len();
         if code < size {
-            emit(&mut out, &prefix, &last, &lens, code);
+            for b in emit(&prefix, &last, &lens, code).iter() {
+                out.push(*b);
+            }
             if prev >= 0 {
                 let first = out[start];
                 prefix.push(prev);
@@ -194,7 +204,9 @@ pub fn lzw(src: &Vec<u8>, early: i64) -> Vec<u8> {
             if prev < 0 {
                 return out;
             }
-            emit(&mut out, &prefix, &last, &lens, prev);
+            for b in emit(&prefix, &last, &lens, prev).iter() {
+                out.push(*b);
+            }
             let first = out[start];
             out.push(first);
             prefix.push(prev);
@@ -213,14 +225,11 @@ pub fn lzw(src: &Vec<u8>, early: i64) -> Vec<u8> {
     }
 }
 
-fn emit(out: &mut Vec<u8>, prefix: &Vec<i64>, last: &Vec<u8>, lens: &Vec<i64>, code: i64) {
+/// The bytes of LZW code `code`.
+fn emit(prefix: &Vec<i64>, last: &Vec<u8>, lens: &Vec<i64>, code: i64) -> Vec<u8> {
     let n = lens[code as usize] as usize;
-    let base = out.len();
-    let mut k: usize = 0;
-    while k < n {
-        out.push(0);
-        k += 1;
-    }
+    let base: usize = 0;
+    let mut out: Vec<u8> = vec![0; n];
     let mut c = code;
     let mut j = n;
     while j > 0 && c >= 0 {
@@ -228,6 +237,7 @@ fn emit(out: &mut Vec<u8>, prefix: &Vec<i64>, last: &Vec<u8>, lens: &Vec<i64>, c
         out[base + j] = last[c as usize];
         c = prefix[c as usize];
     }
+    out
 }
 
 fn parm(p: &Obj, key: &str, dflt: i64) -> i64 {
