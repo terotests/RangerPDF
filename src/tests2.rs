@@ -521,15 +521,45 @@ fn sparse(c: &mut Check) {
     let mut d = sparse_open(&full, 4096, &mut fed);
     c.ok("not short", !d.short());
     c.eqi("pages", d.page_count(), 3);
-    c.eq("size", &format!("{}x{}", d.page_width(2), d.page_height(2)), "300x100");
+    c.ok(&format!("open read {} bytes", fed[0]), fed[0] <= 3 * 4096);
     let t0 = sparse_text(&mut d, 0, &full, &mut fed);
     c.eq("first page", &t0.trim().to_string(), "One");
     let t2 = sparse_text(&mut d, 2, &full, &mut fed);
     c.eq("last page", &t2.trim().to_string(), "Three");
+    c.eq("own size", &format!("{}x{}", d.page_width(2), d.page_height(2)), "300x100");
     c.ok(&format!("read {} of {} bytes", fed[0], size), fed[0] * 10 < size);
     let t1 = sparse_text(&mut d, 1, &full, &mut fed);
     c.eq("big page", &t1.trim().to_string(), "Two");
     c.ok("all read now", fed[0] >= size - 8192);
+
+    c.test("pdf:sparse", "pages far apart are read when shown");
+    // every page's dictionary next to its own big content: opening reads
+    // the end and the page tree, not each page's dictionary
+    let mut objs2: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R] /Count 4 /MediaBox [0 0 200 100] >>".to_string(),
+    ];
+    let mut pg = 0;
+    while pg < 4 {
+        let body = format!("BT /F1 12 Tf 10 50 Td (P{}) Tj ET\n{}", pg, big);
+        let mb = if pg == 3 { " /MediaBox [0 0 400 100]" } else { "" };
+        objs2.push(format!("<< /Type /Page /Parent 2 0 R{} /Contents {} 0 R /Resources << /Font << /F1 11 0 R >> >> >>", mb, 4 + 2 * pg));
+        objs2.push(format!("<< /Length {} >>\nstream\n{}\nendstream", body.chars().count(), body));
+        pg += 1;
+    }
+    objs2.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string());
+    let far = build_pdf(&objs2, "");
+    let mut fed3: Vec<i64> = vec![0];
+    let mut d3 = sparse_open(&far, 4096, &mut fed3);
+    c.eqi("pages", d3.page_count(), 4);
+    c.ok(&format!("open read {} bytes", fed3[0]), fed3[0] <= 4 * 4096);
+    c.eq("inherited size", &format!("{}x{}", d3.page_width(3), d3.page_height(3)), "200x100");
+    let p3 = sparse_text(&mut d3, 3, &far, &mut fed3);
+    c.ok("text", p3.trim().starts_with("P3"));
+    c.eq("own size", &format!("{}x{}", d3.page_width(3), d3.page_height(3)), "400x100");
+    let p1 = sparse_text(&mut d3, 1, &far, &mut fed3);
+    c.ok("other page", p1.trim().starts_with("P1"));
+    c.ok(&format!("read {} of {}", fed3[0], far.len()), fed3[0] < (far.len() as i64) / 2 + 20000);
 
     c.test("pdf:sparse", "a broken cross-reference reads the whole file");
     let mut bad = full.clone();

@@ -61,6 +61,12 @@ fn main() {
         let mut sizes_ok = b.page_count() == n;
         let mut i = 0;
         while sizes_ok && i < n {
+            // a lazy page's own size comes when it is realized
+            let mut k2 = 0;
+            while !b.realize(i) && k2 < 100 {
+                feed(&mut b, &full, &mut fed);
+                k2 += 1;
+            }
             sizes_ok = a.page_width(i) == b.page_width(i) && a.page_height(i) == b.page_height(i);
             i += 1;
         }

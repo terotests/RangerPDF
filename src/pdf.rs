@@ -141,12 +141,26 @@ impl PdfDocument {
             return PageOut::new(0.0, 0.0);
         }
         self.doc.begin();
+        if !self.doc.realize(i as usize) {
+            return PageOut::new(0.0, 0.0);
+        }
         let out = pdf_render::render_page(&mut self.doc, &mut self.renderer, i as usize);
         if self.doc.short {
             // fonts read from a hole are read again next time
             self.renderer.reset();
         }
         out
+    }
+
+    /// Page i's own dictionary read (a sparse document reads it when the
+    /// page is first shown); its size may differ from the one given before.
+    /// false while its bytes are not here (short).
+    pub fn realize(&mut self, i: i64) -> bool {
+        if i < 0 {
+            return true;
+        }
+        self.doc.begin();
+        self.doc.realize(i as usize)
     }
 
     /// The page's text, as plain text.

@@ -30,6 +30,11 @@ pub struct Page {
     pub resources: Obj,
     /// the page object's number, -1 when it is not an indirect object
     pub num: i64,
+    /// a sparse document's page whose dictionary is not read yet: its size
+    /// is the inherited one until realize() reads it
+    pub lazy: bool,
+    /// the attributes it inherits (Resources, MediaBox, CropBox, Rotate)
+    pub inh: Obj,
 }
 
 impl Page {
@@ -78,6 +83,9 @@ pub struct Doc {
     pub short: bool,
     /// reads that came short, so that an object read from a hole is not kept
     misses: i64,
+    /// read every page's dictionary when the page tree is read (a tree that
+    /// did not keep the shape lazy pages expect)
+    no_lazy: bool,
 }
 
 fn norm_box(b: &Obj) -> Vec<f64> {
@@ -169,6 +177,7 @@ impl Doc {
             need: vec![],
             short: false,
             misses: 0,
+            no_lazy: false,
         }
     }
 
@@ -186,6 +195,7 @@ impl Doc {
         self.repaired = false;
         self.crypt = Crypt::none();
         self.error = String::new();
+        self.no_lazy = false;
         self.begin();
         self.read_header();
         let ok = self.read_xref();
@@ -1047,10 +1057,101 @@ impl Doc {
             return;
         }
         if kids.k == K::Arr {
+            // a sparse document's flat node (as many pages as kids): a kid
+            // that is not here yet is a page read when it is shown, so that
+            // opening does not read every page's dictionary
+            let flat = self.sparse && !self.no_lazy && node.at("Count").is_num() && node.at("Count").i() == (kids.items.len() as i64);
             for kid in kids.items.iter() {
-                self.walk(kid, &inh, visited, depth + 1);
+                if flat && kid.k == K::Ref && !self.object_here(kid.i()) {
+                    self.add_lazy(kid.i(), &inh);
+                } else {
+                    self.walk(kid, &inh, visited, depth + 1);
+                }
             }
         }
+    }
+
+    /// Whether object `num` can be read without a missing chunk: it is in
+    /// the cache, or the chunk of its offset is here (an object in an
+    /// object stream counts as not here).
+    fn object_here(&self, num: i64) -> bool {
+        if self.cache.contains_key(&num) {
+            return true;
+        }
+        if num < 0 || (num as usize) >= self.x_type.len() || self.x_type[num as usize] != 1 {
+            return false;
+        }
+        let off = self.x_a[num as usize] as usize;
+        let c = off / self.chunk;
+        c < self.have.len() && self.have[c]
+    }
+
+    fn add_lazy(&mut self, num: i64, inh: &Obj) {
+        let mb = self.get_key(inh, "MediaBox");
+        let mut media = norm_box(&self.resolve_arr(&mb));
+        if media[2] - media[0] <= 0.0 || media[3] - media[1] <= 0.0 {
+            media = vec![0.0, 0.0, 612.0, 792.0];
+        }
+        let crop = media.clone();
+        let rot_o = self.get_key(inh, "Rotate");
+        let mut rot = rot_o.i() % 360;
+        if rot < 0 {
+            rot += 360;
+        }
+        if rot % 90 != 0 {
+            rot = 0;
+        }
+        self.pages.push(Page { dict: pdf_obj::null(), media: media, crop: crop, rotate: rot, resources: pdf_obj::null(), num: num, lazy: true, inh: inh.clone() });
+    }
+
+    /// Reads page i's own dictionary when it is lazy; false when its bytes
+    /// are not here yet (short) or the page tree had to be read again.
+    pub fn realize(&mut self, i: usize) -> bool {
+        if i >= self.pages.len() || !self.pages[i].lazy {
+            return true;
+        }
+        let num = self.pages[i].num;
+        let node = self.object(num);
+        if self.short {
+            return false;
+        }
+        let ty = node.at("Type");
+        let kids = node.at("Kids");
+        if !node.is_dict() || ty.is_name("Pages") || kids.k == K::Arr {
+            // not a page after all: the whole tree, every page read
+            self.no_lazy = true;
+            let old = self.pages.clone();
+            self.cache = HashMap::new();
+            self.read_pages();
+            if self.short {
+                self.pages = old;
+                return false;
+            }
+            if self.pages.len() != old.len() {
+                // the viewer has laid out the pages it was given
+                self.pages = old;
+                self.warn("page tree changed when read in full");
+            }
+            return true;
+        }
+        let mut inh = self.pages[i].inh.clone();
+        let names: Vec<&str> = vec!["Resources", "MediaBox", "CropBox", "Rotate"];
+        for k in names.iter() {
+            if node.has(k) {
+                let v = node.at(k);
+                inh.set(k, v);
+            }
+        }
+        let n = self.pages.len();
+        self.add_page(&node, &inh, num);
+        if self.short {
+            self.pages.truncate(n);
+            return false;
+        }
+        let made = self.pages[n].clone();
+        self.pages.truncate(n);
+        self.pages[i] = made;
+        true
     }
 
     fn add_page(&mut self, node: &Obj, inh: &Obj, num: i64) {
@@ -1081,7 +1182,7 @@ impl Doc {
             rot = 0;
         }
         let res = self.get_key(inh, "Resources");
-        self.pages.push(Page { dict: node.clone(), media: media, crop: crop, rotate: rot, resources: res, num: num });
+        self.pages.push(Page { dict: node.clone(), media: media, crop: crop, rotate: rot, resources: res, num: num, lazy: false, inh: pdf_obj::null() });
     }
 
     fn resolve_arr(&mut self, a: &Obj) -> Obj {
@@ -1132,7 +1233,7 @@ impl Doc {
     /// The page's content streams, decoded and joined.
     pub fn page_content(&mut self, i: usize) -> Vec<u8> {
         let mut out: Vec<u8> = vec![];
-        if i >= self.pages.len() {
+        if i >= self.pages.len() || !self.realize(i) {
             return out;
         }
         let pd = self.pages[i].dict.clone();
