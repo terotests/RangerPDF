@@ -140,75 +140,8 @@ impl PdfDocument {
     /// `want` on page `i`, case-insensitive; a match is one box spanning
     /// its characters.
     pub fn find(&mut self, i: i64, want: &str) -> Vec<TextItem> {
-        let mut out: Vec<TextItem> = vec![];
-        let w: Vec<char> = want.to_lowercase().chars().collect();
-        if w.is_empty() {
-            return out;
-        }
         let p = self.render(i);
-        // the characters with the item each came from (-1 for a gap)
-        let mut cs: Vec<char> = vec![];
-        let mut from: Vec<i64> = vec![];
-        let mut k: usize = 0;
-        while k < p.text.len() {
-            let t = &p.text[k];
-            if k > 0 {
-                let prev = &p.text[k - 1];
-                let dy = t.y - prev.y;
-                let ady = if dy < 0.0 { 0.0 - dy } else { dy };
-                let gap = t.x - (prev.x + prev.w);
-                if (ady > prev.h * 0.5 || gap > t.h * 0.15) && t.text != " " {
-                    cs.push(' ');
-                    from.push(-1);
-                }
-            }
-            for c in t.text.to_lowercase().chars() {
-                cs.push(c);
-                from.push(k as i64);
-            }
-            k += 1;
-        }
-        let mut at: usize = 0;
-        while at + w.len() <= cs.len() {
-            let mut j: usize = 0;
-            while j < w.len() && cs[at + j] == w[j] {
-                j += 1;
-            }
-            if j == w.len() {
-                let mut x0 = 0.0;
-                let mut y0 = 0.0;
-                let mut x1 = 0.0;
-                let mut y1 = 0.0;
-                let mut any = false;
-                let mut q = at;
-                while q < at + w.len() {
-                    if from[q] >= 0 {
-                        let t = &p.text[from[q] as usize];
-                        if !any || t.x < x0 {
-                            x0 = t.x;
-                        }
-                        if !any || t.y < y0 {
-                            y0 = t.y;
-                        }
-                        if !any || t.x + t.w > x1 {
-                            x1 = t.x + t.w;
-                        }
-                        if !any || t.y + t.h > y1 {
-                            y1 = t.y + t.h;
-                        }
-                        any = true;
-                    }
-                    q += 1;
-                }
-                if any {
-                    out.push(TextItem { text: want.to_string(), x: x0, y: y0, w: x1 - x0, h: y1 - y0, dir: 0 });
-                }
-                at += w.len();
-            } else {
-                at += 1;
-            }
-        }
-        out
+        find_in(&p, want)
     }
 
     /// The document's bookmarks, in order, at most 2000.
@@ -337,4 +270,77 @@ impl PdfDocument {
         }
         pdf_obj::null()
     }
+}
+
+/// `want` in a rendered page's text (PdfDocument::find without the render),
+/// for hosts that keep pages' text.
+pub fn find_in(p: &PageOut, want: &str) -> Vec<TextItem> {
+    let mut out: Vec<TextItem> = vec![];
+    let w: Vec<char> = want.to_lowercase().chars().collect();
+    if w.is_empty() {
+        return out;
+    }
+    // the characters with the item each came from (-1 for a gap)
+    let mut cs: Vec<char> = vec![];
+    let mut from: Vec<i64> = vec![];
+    let mut k: usize = 0;
+    while k < p.text.len() {
+        let t = &p.text[k];
+        if k > 0 {
+            let prev = &p.text[k - 1];
+            let dy = t.y - prev.y;
+            let ady = if dy < 0.0 { 0.0 - dy } else { dy };
+            let gap = t.x - (prev.x + prev.w);
+            if (ady > prev.h * 0.5 || gap > t.h * 0.15) && t.text != " " {
+                cs.push(' ');
+                from.push(-1);
+            }
+        }
+        for c in t.text.to_lowercase().chars() {
+            cs.push(c);
+            from.push(k as i64);
+        }
+        k += 1;
+    }
+    let mut at: usize = 0;
+    while at + w.len() <= cs.len() {
+        let mut j: usize = 0;
+        while j < w.len() && cs[at + j] == w[j] {
+            j += 1;
+        }
+        if j == w.len() {
+            let mut x0 = 0.0;
+            let mut y0 = 0.0;
+            let mut x1 = 0.0;
+            let mut y1 = 0.0;
+            let mut any = false;
+            let mut q = at;
+            while q < at + w.len() {
+                if from[q] >= 0 {
+                    let t = &p.text[from[q] as usize];
+                    if !any || t.x < x0 {
+                        x0 = t.x;
+                    }
+                    if !any || t.y < y0 {
+                        y0 = t.y;
+                    }
+                    if !any || t.x + t.w > x1 {
+                        x1 = t.x + t.w;
+                    }
+                    if !any || t.y + t.h > y1 {
+                        y1 = t.y + t.h;
+                    }
+                    any = true;
+                }
+                q += 1;
+            }
+            if any {
+                out.push(TextItem { text: want.to_string(), x: x0, y: y0, w: x1 - x0, h: y1 - y0, dir: 0 });
+            }
+            at += w.len();
+        } else {
+            at += 1;
+        }
+    }
+    out
 }

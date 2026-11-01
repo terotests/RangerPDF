@@ -1,4 +1,4 @@
-//! The PDF viewer as a library (desktop/app imports it): pdf.rs is the
+//! The PDF reader as a library: pdf.rs is the
 //! entry point. main.rs runs the tests.
 
 mod pdf_cff;
@@ -23,7 +23,7 @@ mod pdf_path;
 pub mod pdf;
 pub mod pdf_picture;
 mod pdf_png;
-mod pdf_raster;
+pub mod pdf_raster;
 mod pdf_render;
 mod pdf_tiff;
 mod pdf_truetype;

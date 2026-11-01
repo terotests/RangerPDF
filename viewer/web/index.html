@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF viewer</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<div class="pv" id="pv">
+  <header class="pv-top" id="pv-top">
+    <div class="pv-brand">PDF viewer</div>
+    <div class="pv-file" id="pv-file"></div>
+    <button class="pv-btn pv-light" id="pv-open-btn" title="Open a PDF file" aria-label="Open file" data-icon="open"></button>
+    <button class="pv-btn pv-light" id="pv-download-btn" title="Download" aria-label="Download" data-icon="download" disabled></button>
+  </header>
+  <section class="pv-card">
+    <div class="pv-head" id="pv-head">
+      <h1 class="pv-title">Preview</h1>
+      <button class="pv-btn" id="pv-full" title="Fullscreen" aria-label="Fullscreen" data-icon="full"></button>
+    </div>
+    <div class="pv-toolbar" role="toolbar" aria-label="Viewer controls">
+      <div class="pv-group">
+        <button class="pv-btn" id="pv-menu-btn" title="Menu" aria-label="Menu" aria-haspopup="menu" data-icon="menu"></button>
+        <button class="pv-btn" id="pv-side-btn" title="Toggle sidebar" aria-label="Toggle sidebar" aria-pressed="false" data-icon="side"></button>
+        <button class="pv-btn" id="pv-view-btn" title="View controls" aria-label="View controls" aria-haspopup="menu" data-icon="gear"></button>
+        <div class="pv-zoom">
+          <button class="pv-zoomval" id="pv-zoom-btn" aria-haspopup="listbox" aria-label="Zoom"><span id="pv-zoom-val">100 %</span><i data-icon="chev"></i></button>
+          <button class="pv-btn" id="pv-zoom-out" title="Zoom out" aria-label="Zoom out" data-icon="minus"></button>
+          <button class="pv-btn" id="pv-zoom-in" title="Zoom in" aria-label="Zoom in" data-icon="plus"></button>
+        </div>
+        <button class="pv-btn" id="pv-pan" title="Pan tool" aria-label="Pan tool" aria-pressed="false" data-icon="hand"></button>
+        <button class="pv-btn" id="pv-select" title="Select tool" aria-label="Select tool" aria-pressed="true" data-icon="select"></button>
+      </div>
+      <div class="pv-group">
+        <button class="pv-btn" id="pv-find-btn" title="Find in document (Ctrl+F)" aria-label="Find in document" data-icon="search"></button>
+      </div>
+    </div>
+    <div class="pv-search" id="pv-search" hidden>
+      <label class="pv-sbox"><i data-icon="search"></i><input id="pv-q" type="search" placeholder="Find in document" aria-label="Find in document" autocomplete="off"></label>
+      <span class="pv-count" id="pv-count" aria-live="polite"></span>
+      <button class="pv-btn" id="pv-prev" title="Previous match" aria-label="Previous match" data-icon="up"></button>
+      <button class="pv-btn" id="pv-next" title="Next match" aria-label="Next match" data-icon="down"></button>
+      <button class="pv-btn" id="pv-find-close" title="Close" aria-label="Close search" data-icon="close"></button>
+    </div>
+    <div class="pv-body">
+      <aside class="pv-side" id="pv-side" hidden>
+        <div class="pv-tabs" role="tablist">
+          <button role="tab" id="pv-tab-thumbs" aria-selected="true">Thumbnails</button>
+          <button role="tab" id="pv-tab-outline" aria-selected="false">Bookmarks</button>
+        </div>
+        <div class="pv-thumbs" id="pv-thumbs" role="list"></div>
+        <div class="pv-outline" id="pv-outline" role="tree" hidden></div>
+      </aside>
+      <main class="pv-pages" id="pv-pages" tabindex="0" aria-label="Pages">
+        <div class="pv-empty" id="pv-empty">
+          <div class="pv-drop">
+            <i data-icon="doc"></i>
+            <p>Drop a PDF here or</p>
+            <button class="pv-primary" id="pv-open-big">Open file</button>
+            <a href="#" id="pv-sample">Open the sample</a>
+          </div>
+        </div>
+      </main>
+    </div>
+    <footer class="pv-pager" id="pv-pager">
+      <button class="pv-btn" id="pv-page-prev" title="Previous page" aria-label="Previous page" data-icon="left"></button>
+      <span><input id="pv-page" aria-label="Page number" inputmode="numeric" value="0"> / <span id="pv-pages-n">0</span></span>
+      <button class="pv-btn" id="pv-page-next" title="Next page" aria-label="Next page" data-icon="right"></button>
+    </footer>
+  </section>
+  <input type="file" id="pv-file-input" accept="application/pdf,.pdf" hidden>
+  <div class="pv-pop" id="pv-pop" role="menu" hidden></div>
+  <div class="pv-dialog-back" id="pv-dialog" hidden>
+    <form class="pv-dialog" id="pv-dialog-form">
+      <h2 id="pv-dialog-title"></h2>
+      <div id="pv-dialog-body"></div>
+      <div class="pv-dialog-buttons">
+        <button type="button" class="pv-plain" id="pv-dialog-cancel">Cancel</button>
+        <button type="submit" class="pv-primary" id="pv-dialog-ok">OK</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script src="viewer.js"></script>
+</body>
+</html>
