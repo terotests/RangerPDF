@@ -1,0 +1,89 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 11 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 393 >>
+stream
+0.92 0.95 1 rg 50 652 495 120 re f
+0.1 0.3 0.7 RG 3 w 50 637 m 545 637 l S
+0 g BT /F1 26 Tf 70 722 Td (Non-Disclosure Agreement) Tj ET
+BT /F2 14 Tf 70 682 Td (between Acme Oy and us, signed 2026-10-01.) Tj ET
+BT /F2 14 Tf 70 622 Td (1. Confidential information means all information disclosed.) Tj ET
+BT /F2 14 Tf 70 562 Td (2. The receiving party keeps it confidential for five years.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 204 >>
+stream
+0.92 0.95 1 rg 50 652 495 120 re f
+0.1 0.3 0.7 RG 3 w 50 637 m 545 637 l S
+0 g BT /F1 26 Tf 70 722 Td (Appendix A) Tj ET
+BT /F2 14 Tf 70 682 Td (Contact persons and the confidential project names.) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 202 >>
+stream
+0.92 0.95 1 rg 50 405 742 120 re f
+0.1 0.3 0.7 RG 3 w 50 390 m 792 390 l S
+0 g BT /F1 26 Tf 70 475 Td (Appendix B: schedule) Tj ET
+BT /F2 14 Tf 70 435 Td (A landscape page with a table of dates.) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Type /Outlines /First 12 0 R /Last 14 0 R /Count 3 >>
+endobj
+12 0 obj
+<< /Title (Non-Disclosure Agreement) /Parent 11 0 R /Dest [6 0 R /Fit] /Next 13 0 R >>
+endobj
+13 0 obj
+<< /Title (Appendix A) /Parent 11 0 R /Dest [8 0 R /Fit] /Prev 12 0 R /Next 14 0 R >>
+endobj
+14 0 obj
+<< /Title (Appendix B: schedule) /Parent 11 0 R /Dest [10 0 R /Fit] /Prev 13 0 R >>
+endobj
+15 0 obj
+<< /Title (Acme NDA signed) >>
+endobj
+xref
+0 16
+0000000000 65535 f 
+0000000009 00000 n 
+0000000075 00000 n 
+0000000145 00000 n 
+0000000247 00000 n 
+0000000346 00000 n 
+0000000789 00000 n 
+0000000925 00000 n 
+0000001179 00000 n 
+0000001315 00000 n 
+0000001567 00000 n 
+0000001704 00000 n 
+0000001778 00000 n 
+0000001881 00000 n 
+0000001983 00000 n 
+0000002083 00000 n 
+trailer
+<< /Size 16 /Root 1 0 R /Info 15 0 R >>
+startxref
+2130
+%%EOF
