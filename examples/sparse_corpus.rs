@@ -34,7 +34,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let dir = &args[1];
     let chunk: i64 = if args.len() > 2 { args[2].parse().unwrap() } else { 65536 };
-    let mut names: Vec<_> = std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "pdf").unwrap_or(false)).collect();
+    let mut names: Vec<_> = if std::path::Path::new(dir).is_file() { vec![std::path::PathBuf::from(dir)] } else { std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "pdf").unwrap_or(false)).collect() };
     names.sort();
     let (mut same, mut diff, mut total, mut read_open, mut read_first) = (0, 0, 0i64, 0i64, 0i64);
     for p in names.iter() {
@@ -61,6 +61,12 @@ fn main() {
         let mut sizes_ok = b.page_count() == n;
         let mut i = 0;
         while sizes_ok && i < n {
+            // a lazy page's own size comes when it is realized
+            let mut k2 = 0;
+            while !b.realize(i) && k2 < 100 {
+                feed(&mut b, &full, &mut fed);
+                k2 += 1;
+            }
             sizes_ok = a.page_width(i) == b.page_width(i) && a.page_height(i) == b.page_height(i);
             i += 1;
         }
