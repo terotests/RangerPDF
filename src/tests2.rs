@@ -9,6 +9,7 @@ use crate::pdf_picture;
 use crate::pdf_png;
 use crate::pdf_raster;
 use crate::pdf_type1::Type1;
+use crate::pdf_font::FontFiles;
 use crate::tests::build_pdf;
 use crate::tests::simple_pdf;
 
@@ -415,6 +416,7 @@ fn pictures(c: &mut Check) {
 
 
 pub fn run_all(c: &mut Check) {
+    sparse(c);
     pictures(c);
     type1(c);
     annots(c);
@@ -450,4 +452,101 @@ fn part(v: &Vec<u8>, from: usize, to: usize) -> Vec<u8> {
         i += 1;
     }
     out
+}
+
+/// Opens `full` as a sparse document read in `chunk` byte chunks; every
+/// range a step needs comes from `full`. The count of bytes fed goes to fed[0].
+fn feed_needs(d: &mut PdfDocument, full: &Vec<u8>, fed: &mut Vec<i64>) {
+    let r = d.needs();
+    let mut i: usize = 0;
+    while i + 1 < r.len() {
+        let mut b: Vec<i64> = vec![];
+        let mut k = r[i] as usize;
+        while k < (r[i + 1] as usize) && k < full.len() {
+            b.push(full[k] as i64);
+            k += 1;
+        }
+        fed[0] = fed[0] + (b.len() as i64);
+        d.feed_ints(r[i], &b);
+        i += 2;
+    }
+}
+
+fn sparse_open(full: &Vec<u8>, chunk: i64, fed: &mut Vec<i64>) -> PdfDocument {
+    let mut d = PdfDocument::open_sparse(full.len() as i64, chunk, "", FontFiles::new());
+    let mut rounds = 0;
+    while d.short() && rounds < 200 {
+        feed_needs(&mut d, full, fed);
+        d.restart("");
+        rounds += 1;
+    }
+    d
+}
+
+fn sparse_text(d: &mut PdfDocument, i: i64, full: &Vec<u8>, fed: &mut Vec<i64>) -> String {
+    let mut t = d.text(i);
+    let mut rounds = 0;
+    while d.short() && rounds < 200 {
+        feed_needs(d, full, fed);
+        t = d.text(i);
+        rounds += 1;
+    }
+    t
+}
+
+fn sparse(c: &mut Check) {
+    c.test("pdf:sparse", "pages read from the chunks they need");
+    let mut big = String::from("BT /F1 12 Tf 10 50 Td (Two) Tj ET\n");
+    let mut i = 0;
+    while i < 6000 {
+        big.push_str("% padding padding padding padding padding padding padding\n");
+        i += 1;
+    }
+    let one = "BT /F1 12 Tf 10 50 Td (One) Tj ET";
+    let three = "BT /F1 12 Tf 10 50 Td (Three) Tj ET";
+    let objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R 6 0 R 8 0 R] /Count 3 /MediaBox [0 0 200 100] >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}\nendstream", one.chars().count(), one),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}\nendstream", big.chars().count(), big),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 100] /Contents 9 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}\nendstream", three.chars().count(), three),
+    ];
+    let full = build_pdf(&objs, "");
+    let size = full.len() as i64;
+    let mut fed: Vec<i64> = vec![0];
+    let mut d = sparse_open(&full, 4096, &mut fed);
+    c.ok("not short", !d.short());
+    c.eqi("pages", d.page_count(), 3);
+    c.eq("size", &format!("{}x{}", d.page_width(2), d.page_height(2)), "300x100");
+    let t0 = sparse_text(&mut d, 0, &full, &mut fed);
+    c.eq("first page", &t0.trim().to_string(), "One");
+    let t2 = sparse_text(&mut d, 2, &full, &mut fed);
+    c.eq("last page", &t2.trim().to_string(), "Three");
+    c.ok(&format!("read {} of {} bytes", fed[0], size), fed[0] * 10 < size);
+    let t1 = sparse_text(&mut d, 1, &full, &mut fed);
+    c.eq("big page", &t1.trim().to_string(), "Two");
+    c.ok("all read now", fed[0] >= size - 8192);
+
+    c.test("pdf:sparse", "a broken cross-reference reads the whole file");
+    let mut bad = full.clone();
+    // startxref points nowhere: the file is scanned, so all of it comes
+    let n = bad.len();
+    let mut k = n - 30;
+    while k < n {
+        if bad[k] >= 48 && bad[k] <= 57 {
+            bad[k] = 49;
+        }
+        k += 1;
+    }
+    let mut fed2: Vec<i64> = vec![0];
+    let mut d2 = sparse_open(&bad, 4096, &mut fed2);
+    c.ok("not short", !d2.short());
+    c.eqi("pages", d2.page_count(), 3);
+    let tb = sparse_text(&mut d2, 1, &bad, &mut fed2);
+    c.eq("big page", &tb.trim().to_string(), "Two");
+    c.eqi("read all", fed2[0], bad.len() as i64);
 }

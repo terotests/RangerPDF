@@ -16,6 +16,8 @@ PASS pdf:doc:xref-table simple file
 PASS pdf:doc:pages simple file
 PASS pdf:doc:repair broken offsets
 PASS pdf:doc:inherit inherited attributes and rotate
+PASS pdf:sparse pages read from the chunks they need
+PASS pdf:sparse a broken cross-reference reads the whole file
 PASS pdf:pictures PNG, JPEG, BMP, GIF and TIFF files to RGBA; JPEG images in PDF
 PASS pdf:type1 embedded Type 1 font with Subrs and an encoding
 PASS pdf:annot annotation appearances
@@ -46,4 +48,4 @@ PASS pdf:api page sizes and errors
 PASS pdf:png page as PNG
 PASS pdf:find find on a page
 PASS pdf:outline bookmarks
-ALL PASS 36
+ALL PASS 38
