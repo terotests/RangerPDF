@@ -1,0 +1,49 @@
+PASS pdf:lexer objects
+PASS pdf:lexer string escapes
+PASS pdf:filter:ASCIIHexDecode hex
+PASS pdf:filter:ASCII85Decode a85
+PASS pdf:filter:RunLengthDecode rl
+PASS pdf:filter:FlateDecode stored and fixed blocks
+PASS pdf:filter:FlateDecode dynamic block
+PASS pdf:filter:LZWDecode lzw
+PASS pdf:filter:predictor png up
+PASS pdf:crypt:md5 md5
+PASS pdf:crypt:sha256 sha256
+PASS pdf:crypt:sha512 sha384 sha512
+PASS pdf:crypt:rc4 rc4
+PASS pdf:crypt:aes aes-128 and aes-256 blocks
+PASS pdf:doc:xref-table simple file
+PASS pdf:doc:pages simple file
+PASS pdf:doc:repair broken offsets
+PASS pdf:doc:inherit inherited attributes and rotate
+PASS pdf:pictures PNG, JPEG, BMP, GIF and TIFF files to RGBA; JPEG images in PDF
+PASS pdf:type1 embedded Type 1 font with Subrs and an encoding
+PASS pdf:annot annotation appearances
+PASS pdf:render:path filled rectangle
+PASS pdf:render:color filled rectangle
+PASS pdf:render:cm transform, save and restore
+PASS pdf:render:q transform, save and restore
+PASS pdf:render:stroke stroke width and dash
+PASS pdf:render:clip clipping
+PASS pdf:render:curve curves and even-odd
+PASS pdf:render:evenodd curves and even-odd
+PASS pdf:color:cmyk device and separation colours
+PASS pdf:color:separation device and separation colours
+PASS pdf:func:2 device and separation colours
+PASS pdf:func:4 PostScript function
+PASS pdf:color:devicen PostScript function
+PASS pdf:color:indexed indexed image
+PASS pdf:image indexed image
+PASS pdf:text:simple standard font text and widths
+PASS pdf:font:std14 standard font text and widths
+PASS pdf:text:TJ kerning, word and character spacing
+PASS pdf:text:spacing kerning, word and character spacing
+PASS pdf:text:tounicode Type0 font with ToUnicode
+PASS pdf:font:type0 Type0 font with ToUnicode
+PASS pdf:font:differences encoding with differences
+PASS pdf:font:encoding encoding with differences
+PASS pdf:api page sizes and errors
+PASS pdf:png page as PNG
+PASS pdf:find find on a page
+PASS pdf:outline bookmarks
+ALL PASS 36

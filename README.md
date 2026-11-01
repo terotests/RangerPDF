@@ -1,16 +1,25 @@
-# PDF viewer
+# RangerPDF
 
-A PDF parser and renderer in Rust-syntax Ranger, sans-IO: the host hands it
+A PDF reader and renderer in Rust-syntax Ranger, sans-IO: the host hands it
 the file's bytes and the substitute fonts, and gets back per page a display
 list (fills, strokes, clips, images, text with positions), the page's text,
 find boxes, bookmarks, or the page as RGBA pixels / a PNG file. It is tested
-on rust, es6, kotlin, dart and swift (`SUITES=pdf web/test.sh`) and compared
+on rust, es6, kotlin, dart and swift (`./test.sh`) and compared
 with pdf.js on pdf.js' own test corpus (`PARITY.md`). No pdf.js code is used;
 pdf.js is the reference for behaviour only.
 
-The desktop app (`desktop/app/pdf_view.rs`) shows a PDF's pages in the
-preview pane with it: each page is rendered at the width it is shown at and
-drawn as one image.
+The sources are plain Rust as well: `rustc src/main.rs` builds the tests,
+and `Cargo.toml` makes the crate `pdf` (`src/lib.rs`). Ranger compiles the same
+files to its other targets.
+
+Used by:
+
+- `viewer/`, the online viewer: the reader as WebAssembly in a Web Worker and
+  a page after the preview pane of M-Files Web (below).
+- MFilesAPI (terotests/MFilesAPI), which pins a commit of this repository in
+  its `ranger-deps.json`: the desktop window's preview
+  (`desktop/app/pdf_view.rs`) renders each page at the width it is shown at,
+  and the web client serves the online viewer at `/pdf-viewer/`.
 
 ```rust
 let mut d = PdfDocument::open_with_fonts(bytes, "", fonts); // or open(bytes, password)
@@ -35,8 +44,8 @@ d.text(0); d.find(0, "word"); d.outline();
   and metrics of the standard 14 fonts. A font that is not embedded is drawn
   with a substitute face from `FontFiles`: keys `sans`, `serif`, `mono` (each
   also `-bold`, `-italic`, `-bolditalic`), `symbol`, `dingbats`. pdf.js'
-  standard fonts (Liberation Sans, Foxit) fit; `desktop/build.sh` copies them
-  to `bin/fonts/pdf`. Predefined CJK CMaps are not included.
+  standard fonts (Liberation Sans, Foxit) fit; `scripts/deps.sh` fetches
+  them (`ensure_fonts`) at the commit `deps.json` pins. Predefined CJK CMaps are not included.
 - Graphics: paths, clipping, line styles and dashes, all colour spaces
   (Device, CIE-based as their alternates, ICCBased by component count,
   Indexed, Separation, DeviceN with all function types), images and masks
@@ -75,7 +84,65 @@ let p = pdf_picture::decode(&bytes); // p.ok, p.w, p.h, p.rgba
 - `src/pdf_color.rs`, `src/pdf_func.rs`, `src/pdf_image.rs`, `src/pdf_path.rs`
 - `src/tests.rs`, `src/tests2.rs` the tests (`main.rs` runs them)
 - `tools/bench.js` the parity benchmark against pdf.js
+- `viewer/` the online viewer; `test.sh` the test runner, `deps.json` and
+  `scripts/deps.sh` the pinned dependencies (Ranger, pdf.js' standard fonts
+  and test corpus)
 
 Every module's name starts with `pdf_` and struct names avoid common words,
 because Ranger's names are global across the program the module is compiled
 into (the desktop app also has EVG, RangerPPTX, RangerDocx and web/graphql).
+
+## Tests
+
+```sh
+./test.sh               # rust es6 kotlin dart swift (those installed)
+./test.sh rust es6      # some of them
+./test.sh viewer        # the online viewer in headless Chromium
+node tools/bench.js     # parity with pdf.js on its own test corpus (PARITY.md)
+```
+
+`rust` needs only rustc. The other targets compile `src/main.rs` with Ranger,
+fetched to `.deps/Ranger` at the commit `deps.json` pins (`RANGER_DIR` names a
+checkout of your own instead).
+
+## The online viewer
+
+```sh
+rustup target add wasm32-unknown-unknown
+viewer/build.sh          # -> viewer/dist
+node viewer/serve.mjs    # http://127.0.0.1:8790/
+```
+
+`viewer/wasm.rs` makes the reader a WebAssembly module with a C ABI and no
+imports (about 530 kB, `opt-level = "s"`, LTO): `pv_open`, `pv_render` (RGBA
+at a scale, turned in quarter turns), `pv_text`, `pv_find`, `pv_outline`,
+`pv_plain`, with the answer in `pv_out_ptr` / `pv_out_len`. It runs in a Web
+Worker (`viewer/web/pdf-worker.js`), so a slow page does not stop the page
+from scrolling.
+
+The page (`viewer/web/`) follows the preview pane of M-Files Web: menu,
+sidebar with thumbnails and bookmarks, view controls (rotate, page fit, page
+width, actual size), zoom value with zoom out / in, pan and select tools, and
+find with next / previous; pages framed with their number under them and a
+pager at the bottom. Pages near the view are drawn at the screen's pixel
+density and dropped again when far away; each page has a transparent text
+layer for selecting and copying text. Keys: Ctrl+F, F3 / Shift+F3, Enter in
+the find box, Ctrl +/-/0, PgUp/PgDn, Home/End; Ctrl+wheel zooms at the
+pointer. Light and dark themes follow the system (`theme=` overrides).
+
+Opening a file:
+
+- `index.html?file=<url>&name=<shown name>`; also `page=<n>`,
+  `zoom=<percent>|width|page`, `q=<text to find>`, `embed=1` (no header, for
+  a host's preview pane), `theme=light|dark`
+- a dropped file, or Open file in the menu
+- from a host page, with the viewer in an iframe:
+
+```js
+frame.contentWindow.postMessage({ type: "rangerpdf:open", data: arrayBuffer, name: "a.pdf" }, "*", [arrayBuffer]);
+// the viewer posts {type: "rangerpdf:ready"} when it can take a file and
+// {type: "rangerpdf:opened", pages, error} after each one
+```
+
+A file with a password asks for it. Printing is not offered (M-Files Web's
+viewer does not either); Download gives the file back.

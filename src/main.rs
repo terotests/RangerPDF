@@ -1,4 +1,4 @@
-//! web/pdf test runner. The last line is `ALL PASS <n>` when every test passed.
+//! The test runner (./test.sh). The last line is `ALL PASS <n>` when every test passed.
 
 mod pdf_cff;
 mod check;

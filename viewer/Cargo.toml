@@ -1,0 +1,21 @@
+[package]
+name = "rangerpdf-viewer"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+# The online viewer's engine: the reader (../src) as a WebAssembly module with
+# a C ABI and no imports (wasm32-unknown-unknown). viewer/build.sh builds it.
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "wasm.rs"
+
+[dependencies]
+pdf = { path = ".." }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

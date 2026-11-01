@@ -1,0 +1,12 @@
+{
+  "ranger": {
+    "git": "https://github.com/terotests/Ranger.git",
+    "rev": "9cf0fee7764d8d7b8ad3c805cedcc4601590621a"
+  },
+  "pdfjs": {
+    "git": "https://github.com/mozilla/pdf.js.git",
+    "rev": "cfab9b7c8bf494f3b92ff822094b839f0ee530f2",
+    "sparse": "test/pdfs test/test_manifest.json external/standard_fonts",
+    "npm": "4.10.38"
+  }
+}
