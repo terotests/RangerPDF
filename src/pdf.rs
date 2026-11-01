@@ -40,18 +40,12 @@ impl PdfDocument {
 
     /// From a list of byte values (for hosts that hold bytes as ints).
     pub fn open_ints(data: &Vec<i64>, password: &str) -> PdfDocument {
-        let mut b: Vec<u8> = vec![];
-        for x in data.iter() {
-            b.push((*x & 255) as u8);
-        }
+        let b: Vec<u8> = PdfDocument::bytes_of(data);
         PdfDocument::open(b, password)
     }
 
     pub fn open_ints_with_fonts(data: &Vec<i64>, password: &str, fonts: FontFiles) -> PdfDocument {
-        let mut b: Vec<u8> = vec![];
-        for x in data.iter() {
-            b.push((*x & 255) as u8);
-        }
+        let b: Vec<u8> = PdfDocument::bytes_of(data);
         PdfDocument::open_with_fonts(b, password, fonts)
     }
 
@@ -107,11 +101,22 @@ impl PdfDocument {
 
     /// Bytes (as byte values) from offset `at`.
     pub fn feed_ints(&mut self, at: i64, bytes: &Vec<i64>) {
-        let mut b: Vec<u8> = vec![];
-        for x in bytes.iter() {
-            b.push((*x & 255) as u8);
-        }
+        let b: Vec<u8> = PdfDocument::bytes_of(bytes);
         self.doc.feed(at as usize, &b);
+    }
+
+    /// The bytes of ints, in a buffer of its final size: a push copies the
+    /// whole buffer in some of Ranger's targets (Go), so a loop of pushes
+    /// is quadratic in the file's size.
+    fn bytes_of(data: &Vec<i64>) -> Vec<u8> {
+        let n: usize = data.len();
+        let mut b: Vec<u8> = vec![0; n];
+        let mut i: usize = 0;
+        while i < n {
+            b[i] = (data[i] & 255) as u8;
+            i += 1;
+        }
+        b
     }
 
     pub fn error(&self) -> String {
