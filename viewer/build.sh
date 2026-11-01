@@ -16,7 +16,7 @@ source "$ROOT/scripts/deps.sh"
 echo "==> reader -> WebAssembly"
 (cd "$HERE" && RUSTFLAGS="${RUSTFLAGS:--Awarnings}" cargo build -q --release --target wasm32-unknown-unknown)
 mkdir -p "$OUT/fonts"
-cp "$HERE/target/wasm32-unknown-unknown/release/rangerpdf_viewer.wasm" "$OUT/rangerpdf.wasm"
+cp "${CARGO_TARGET_DIR:-$HERE/target}/wasm32-unknown-unknown/release/rangerpdf_viewer.wasm" "$OUT/rangerpdf.wasm"
 cp "$HERE/web/"*.{html,css,js} "$OUT/"
 if ensure_fonts; then
   cp "$PDF_FONTS"/*.{ttf,pfb} "$PDF_FONTS"/LICENSE_* "$OUT/fonts/"
