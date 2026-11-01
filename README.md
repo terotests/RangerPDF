@@ -107,6 +107,9 @@ checkout of your own instead).
 
 ## The online viewer
 
+Try it: https://terotests.github.io/RangerPDF/ (built from main by
+`.github/workflows/pages.yml` into the gh-pages branch).
+
 ```sh
 rustup target add wasm32-unknown-unknown
 viewer/build.sh          # -> viewer/dist
