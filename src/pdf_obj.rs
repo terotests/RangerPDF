@@ -86,7 +86,9 @@ pub fn arr() -> Obj {
 /// Bytes of an ASCII (or Latin-1) text.
 pub fn bytes_of(s: &str) -> Vec<u8> {
     // sized first and set by index: a push on a Ranger buffer copies it on es6
-    let mut v: Vec<u8> = vec![0; s.chars().count()];
+    // (the length in a local: es6 re-evaluates a `vec![x; n]` count per element)
+    let n_chars = s.chars().count();
+    let mut v: Vec<u8> = vec![0; n_chars];
     let mut i: usize = 0;
     for c in s.chars() {
         let n = c as i64;
