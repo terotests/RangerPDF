@@ -246,18 +246,26 @@ fn t1_charstring(ops: Vec<i64>) -> Vec<u8> {
     t1_encrypt(&plain, 4330)
 }
 
-fn push_text(v: &mut Vec<u8>, s: &str) {
-    for b in pdf_obj::bytes_of(s).iter() {
-        v.push(*b);
+/// `v` followed by `b`. Helpers return new bytes: a Ranger buffer
+/// (`Vec<u8>`) cannot grow through a `&mut` parameter.
+fn cat(v: &Vec<u8>, b: &Vec<u8>) -> Vec<u8> {
+    let mut out: Vec<u8> = vec![];
+    for x in v.iter() {
+        out.push(*x);
     }
+    for x in b.iter() {
+        out.push(*x);
+    }
+    out
 }
 
-fn push_entry(v: &mut Vec<u8>, head: &str, cs: &Vec<u8>, tail: &str) {
-    push_text(v, &format!("{} {} RD ", head, cs.len()));
-    for b in cs.iter() {
-        v.push(*b);
-    }
-    push_text(v, tail);
+fn with_text(v: &Vec<u8>, s: &str) -> Vec<u8> {
+    cat(v, &pdf_obj::bytes_of(s))
+}
+
+fn entry(head: &str, cs: &Vec<u8>, tail: &str) -> Vec<u8> {
+    let start = pdf_obj::bytes_of(&format!("{} {} RD ", head, cs.len()));
+    with_text(&cat(&start, cs), tail)
 }
 
 fn type1(c: &mut Check) {
@@ -267,15 +275,15 @@ fn type1(c: &mut Check) {
     let a = t1_charstring(vec![139, 248, 136, 13, 239, 239, 21, 139, 10, 139, 248, 136, 5, 9, 14]);
     let notdef = t1_charstring(vec![139, 248, 136, 13, 14]);
     let mut pr: Vec<u8> = vec![0, 0, 0, 0];
-    push_text(&mut pr, "dup /Private 8 dict dup begin\n/lenIV 4 def\n/Subrs 1 array\n");
-    push_entry(&mut pr, "dup 0", &subr, " NP\n");
-    push_text(&mut pr, "ND\n2 index /CharStrings 2 dict dup begin\n");
-    push_entry(&mut pr, "/.notdef", &notdef, " ND\n");
-    push_entry(&mut pr, "/A", &a, " ND\n");
-    push_text(&mut pr, "end\nend\n");
+    pr = with_text(&pr, "dup /Private 8 dict dup begin\n/lenIV 4 def\n/Subrs 1 array\n");
+    pr = cat(&pr, &entry("dup 0", &subr, " NP\n"));
+    pr = with_text(&pr, "ND\n2 index /CharStrings 2 dict dup begin\n");
+    pr = cat(&pr, &entry("/.notdef", &notdef, " ND\n"));
+    pr = cat(&pr, &entry("/A", &a, " ND\n"));
+    pr = with_text(&pr, "end\nend\n");
     let enc = t1_encrypt(&pr, 55665);
     let mut f: Vec<u8> = vec![];
-    push_text(&mut f, "%!PS-AdobeFont-1.0: Test\n/FontMatrix [0.001 0 0 0.001 0 0] readonly def\n/Encoding 256 array\n0 1 255 {1 index exch /.notdef put} for\ndup 65 /A put\nreadonly def\ncurrentfile eexec\n");
+    f = with_text(&f, "%!PS-AdobeFont-1.0: Test\n/FontMatrix [0.001 0 0 0.001 0 0] readonly def\n/Encoding 256 array\n0 1 255 {1 index exch /.notdef put} for\ndup 65 /A put\nreadonly def\ncurrentfile eexec\n");
     let hexd = "0123456789abcdef";
     let hx: Vec<char> = hexd.chars().collect();
     let mut h = String::new();
@@ -283,8 +291,8 @@ fn type1(c: &mut Check) {
         h.push(hx[(*b as usize) / 16]);
         h.push(hx[(*b as usize) % 16]);
     }
-    push_text(&mut f, &h);
-    push_text(&mut f, "\ncleartomark\n");
+    f = with_text(&f, &h);
+    f = with_text(&f, "\ncleartomark\n");
     let t = Type1::parse(&f, 0);
     c.eq("ok", if t.ok { "yes" } else { "no" }, "yes");
     c.eq("encoding", &t.encoding[65], "A");

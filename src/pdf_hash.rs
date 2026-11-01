@@ -86,7 +86,10 @@ fn word_be(d: &Vec<u8>, i: usize) -> f64 {
     (d[i + 3] as f64) + (d[i + 2] as f64) * 256.0 + (d[i + 1] as f64) * 65536.0 + (d[i] as f64) * 16777216.0
 }
 
-fn put_le(out: &mut Vec<u8>, w: f64) {
+/// `w` as 4 little-endian bytes. Helpers return new bytes: a Ranger buffer
+/// (`Vec<u8>`) cannot grow through a `&mut` parameter.
+fn le_bytes(w: f64) -> Vec<u8> {
+    let mut out: Vec<u8> = vec![];
     let mut x = w;
     let mut k = 0;
     while k < 4 {
@@ -95,15 +98,12 @@ fn put_le(out: &mut Vec<u8>, w: f64) {
         x = (x / 256.0).floor();
         k += 1;
     }
+    out
 }
 
-fn put_be(out: &mut Vec<u8>, w: f64) {
-    let mut tmp: Vec<u8> = vec![];
-    put_le(&mut tmp, w);
-    out.push(tmp[3]);
-    out.push(tmp[2]);
-    out.push(tmp[1]);
-    out.push(tmp[0]);
+fn be_bytes(w: f64) -> Vec<u8> {
+    let t = le_bytes(w);
+    vec![t[3], t[2], t[1], t[0]]
 }
 
 /// The message padded to 64-byte blocks (MD5 and SHA-256), the bit length
@@ -118,11 +118,19 @@ fn pad64(m: &Vec<u8>, little: bool) -> Vec<u8> {
     let lo = bits - (bits / T32).floor() * T32;
     let hi = (bits / T32).floor();
     if little {
-        put_le(&mut d, lo);
-        put_le(&mut d, hi);
+        for b in le_bytes(lo).iter() {
+            d.push(*b);
+        }
+        for b in le_bytes(hi).iter() {
+            d.push(*b);
+        }
     } else {
-        put_be(&mut d, hi);
-        put_be(&mut d, lo);
+        for b in be_bytes(hi).iter() {
+            d.push(*b);
+        }
+        for b in be_bytes(lo).iter() {
+            d.push(*b);
+        }
     }
     d
 }
@@ -186,10 +194,18 @@ pub fn md5(m: &Vec<u8>) -> Vec<u8> {
         off += 64;
     }
     let mut out: Vec<u8> = vec![];
-    put_le(&mut out, a0);
-    put_le(&mut out, b0);
-    put_le(&mut out, c0);
-    put_le(&mut out, d0);
+    for b in le_bytes(a0).iter() {
+        out.push(*b);
+    }
+    for b in le_bytes(b0).iter() {
+        out.push(*b);
+    }
+    for b in le_bytes(c0).iter() {
+        out.push(*b);
+    }
+    for b in le_bytes(d0).iter() {
+        out.push(*b);
+    }
     out
 }
 
@@ -298,7 +314,9 @@ pub fn sha256(m: &Vec<u8>) -> Vec<u8> {
     }
     let mut out: Vec<u8> = vec![];
     for x in h.iter() {
-        put_be(&mut out, *x);
+        for b in be_bytes(*x).iter() {
+            out.push(*b);
+        }
     }
     out
 }
@@ -394,10 +412,18 @@ fn sha512_core(m: &Vec<u8>, iv: &Vec<String>, out_words: usize) -> Vec<u8> {
         d.push(0);
     }
     let bits = (m.len() as f64) * 8.0;
-    put_be(&mut d, 0.0);
-    put_be(&mut d, 0.0);
-    put_be(&mut d, (bits / T32).floor());
-    put_be(&mut d, bits - (bits / T32).floor() * T32);
+    for b in be_bytes(0.0).iter() {
+        d.push(*b);
+    }
+    for b in be_bytes(0.0).iter() {
+        d.push(*b);
+    }
+    for b in be_bytes((bits / T32).floor()).iter() {
+        d.push(*b);
+    }
+    for b in be_bytes(bits - (bits / T32).floor() * T32).iter() {
+        d.push(*b);
+    }
     let mut off: usize = 0;
     while off < d.len() {
         let mut wh: Vec<f64> = vec![];
@@ -492,8 +518,12 @@ fn sha512_core(m: &Vec<u8>, iv: &Vec<String>, out_words: usize) -> Vec<u8> {
     let mut out: Vec<u8> = vec![];
     let mut k: usize = 0;
     while k < out_words {
-        put_be(&mut out, hh[k]);
-        put_be(&mut out, hl[k]);
+        for b in be_bytes(hh[k]).iter() {
+            out.push(*b);
+        }
+        for b in be_bytes(hl[k]).iter() {
+            out.push(*b);
+        }
         k += 1;
     }
     out

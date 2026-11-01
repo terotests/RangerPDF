@@ -55,16 +55,15 @@ impl Crc {
     }
 }
 
-fn put32(out: &mut Vec<u8>, v: i64) {
-    out.push(((v >> 24) & 255) as u8);
-    out.push(((v >> 16) & 255) as u8);
-    out.push(((v >> 8) & 255) as u8);
-    out.push((v & 255) as u8);
+/// `v` as 4 big-endian bytes. Helpers return new bytes: a Ranger buffer
+/// (`Vec<u8>`) cannot grow through a `&mut` parameter.
+fn be32(v: i64) -> Vec<u8> {
+    vec![((v >> 24) & 255) as u8, ((v >> 16) & 255) as u8, ((v >> 8) & 255) as u8, (v & 255) as u8]
 }
 
-fn chunk(out: &mut Vec<u8>, crc: &Crc, kind: &str, data: &Vec<u8>) {
-    put32(out, data.len() as i64);
-    let start = out.len();
+/// One PNG chunk: length, kind, data, CRC.
+fn chunk(crc: &Crc, kind: &str, data: &Vec<u8>) -> Vec<u8> {
+    let mut out: Vec<u8> = be32(data.len() as i64);
     for b in pdf_obj::bytes_of(kind).iter() {
         out.push(*b);
     }
@@ -72,25 +71,29 @@ fn chunk(out: &mut Vec<u8>, crc: &Crc, kind: &str, data: &Vec<u8>) {
         out.push(*b);
     }
     let end = out.len();
-    let c = crc.of(out, start, end);
+    let c = crc.of(&out, 4, end);
     for b in c.iter() {
         out.push(*b);
     }
+    out
 }
 
 /// `px` is w * h * 4 bytes, RGBA, rows top to bottom.
 pub fn encode_rgba(w: i64, h: i64, px: &Vec<u8>) -> Vec<u8> {
     let crc = Crc::new();
     let mut out: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10];
-    let mut ihdr: Vec<u8> = vec![];
-    put32(&mut ihdr, w);
-    put32(&mut ihdr, h);
+    let mut ihdr: Vec<u8> = be32(w);
+    for b in be32(h).iter() {
+        ihdr.push(*b);
+    }
     ihdr.push(8); // bit depth
     ihdr.push(6); // RGBA
     ihdr.push(0);
     ihdr.push(0);
     ihdr.push(0);
-    chunk(&mut out, &crc, "IHDR", &ihdr);
+    for b in chunk(&crc, "IHDR", &ihdr).iter() {
+        out.push(*b);
+    }
     // the scanlines with filter type 0, in stored deflate blocks
     let row = (w * 4) as usize;
     let total = (h as usize) * (row + 1);
@@ -137,8 +140,12 @@ pub fn encode_rgba(w: i64, h: i64, px: &Vec<u8>) -> Vec<u8> {
     z.push((s2 & 255) as u8);
     z.push(((s1 >> 8) & 255) as u8);
     z.push((s1 & 255) as u8);
-    chunk(&mut out, &crc, "IDAT", &z);
+    for b in chunk(&crc, "IDAT", &z).iter() {
+        out.push(*b);
+    }
     let none: Vec<u8> = vec![];
-    chunk(&mut out, &crc, "IEND", &none);
+    for b in chunk(&crc, "IEND", &none).iter() {
+        out.push(*b);
+    }
     out
 }
