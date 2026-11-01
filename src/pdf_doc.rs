@@ -3,7 +3,12 @@
 //! tree with inherited attributes. A file whose cross-reference is missing
 //! or wrong is read again by scanning for its objects, as readers do.
 //!
-//! Sans-IO: the document is the bytes it was given.
+//! Sans-IO: the document is the bytes it was given. A document can also be
+//! opened from its size alone (Doc::sparse): the bytes come in chunks the
+//! host fetches (a vault download read at an offset, an HTTP Range). Every
+//! read checks that its bytes are there; when they are not, the chunks are
+//! listed in `need`, `short` is set and nothing read from the hole is kept.
+//! The host feeds the chunks and does the same step again (open, a page).
 
 use std::collections::HashMap;
 
@@ -63,6 +68,16 @@ pub struct Doc {
     pub crypt: Crypt,
     /// set when the document cannot be read at all (bad password, no pages)
     pub error: String,
+    /// the bytes come in chunks (Doc::sparse); `have` per chunk
+    pub sparse: bool,
+    pub chunk: usize,
+    have: Vec<bool>,
+    /// chunks a read wanted and did not have, in the order asked
+    pub need: Vec<i64>,
+    /// a read since begin() wanted bytes that were not there
+    pub short: bool,
+    /// reads that came short, so that an object read from a hole is not kept
+    misses: i64,
 }
 
 fn norm_box(b: &Obj) -> Vec<f64> {
@@ -104,7 +119,37 @@ fn is_digit(c: u8) -> bool {
 
 impl Doc {
     pub fn open(data: Vec<u8>, password: &str) -> Doc {
-        let mut d = Doc {
+        let mut d = Doc::blank(data);
+        d.start(password);
+        d
+    }
+
+    /// A document of `size` bytes none of which are here yet; the host
+    /// feeds chunks of `chunk` bytes and calls start() until `short` is off.
+    pub fn sparse(size: usize, chunk: usize, password: &str) -> Doc {
+        let mut buf: Vec<u8> = vec![];
+        let mut i: usize = 0;
+        while i < size {
+            buf.push(0);
+            i += 1;
+        }
+        let mut d = Doc::blank(buf);
+        d.sparse = true;
+        d.chunk = if chunk < 1024 { 1024 } else { chunk };
+        let n = (size + d.chunk - 1) / d.chunk;
+        let mut h: Vec<bool> = vec![];
+        let mut j: usize = 0;
+        while j < n {
+            h.push(false);
+            j += 1;
+        }
+        d.have = h;
+        d.start(password);
+        d
+    }
+
+    fn blank(data: Vec<u8>) -> Doc {
+        Doc {
             lex: PdfLexer::new(data),
             x_type: vec![],
             x_a: vec![],
@@ -118,31 +163,155 @@ impl Doc {
             repaired: false,
             crypt: Crypt::none(),
             error: String::new(),
-        };
-        d.read_header();
-        if !d.read_xref() {
-            d.repair();
+            sparse: false,
+            chunk: 65536,
+            have: vec![],
+            need: vec![],
+            short: false,
+            misses: 0,
         }
-        if !d.trailer.at("Root").is_dict() && d.trailer.at("Root").k != K::Ref {
-            d.repair();
+    }
+
+    /// Reads the document's structure (cross-reference, trailer, pages)
+    /// from the bytes it has; on a sparse document again after a short one.
+    pub fn start(&mut self, password: &str) {
+        self.x_type = vec![];
+        self.x_a = vec![];
+        self.x_b = vec![];
+        self.trailer = pdf_obj::dict();
+        self.cache = HashMap::new();
+        self.busy = vec![];
+        self.pages = vec![];
+        self.warnings = vec![];
+        self.repaired = false;
+        self.crypt = Crypt::none();
+        self.error = String::new();
+        self.begin();
+        self.read_header();
+        let ok = self.read_xref();
+        if self.short {
+            return;
         }
-        d.setup_crypt(password);
-        if !d.error.is_empty() {
-            return d;
+        if !ok {
+            self.repair();
         }
-        d.read_pages();
-        if d.pages.is_empty() && !d.repaired {
-            d.repair();
-            d.cache = HashMap::new();
-            d.read_pages();
+        if !self.short && !self.trailer.at("Root").is_dict() && self.trailer.at("Root").k != K::Ref {
+            self.repair();
         }
-        if d.pages.is_empty() {
-            d.pages_by_scan();
+        if self.short {
+            return;
         }
-        if d.pages.is_empty() {
-            d.error = "no pages".to_string();
+        self.setup_crypt(password);
+        if !self.error.is_empty() || self.short {
+            return;
         }
-        d
+        self.read_pages();
+        if self.short {
+            self.pages = vec![];
+            return;
+        }
+        if self.pages.is_empty() && !self.repaired {
+            self.repair();
+            self.cache = HashMap::new();
+            self.read_pages();
+        }
+        if self.pages.is_empty() && !self.short {
+            self.pages_by_scan();
+        }
+        if self.short {
+            self.pages = vec![];
+            return;
+        }
+        if self.pages.is_empty() {
+            self.error = "no pages".to_string();
+        }
+    }
+
+    /// A new step: forget what the last one needed.
+    pub fn begin(&mut self) {
+        self.need = vec![];
+        self.short = false;
+    }
+
+    /// Every chunk is here (always so for a document opened from its bytes).
+    pub fn complete(&self) -> bool {
+        if !self.sparse {
+            return true;
+        }
+        for h in self.have.iter() {
+            if !*h {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Bytes from offset `at`: the chunks they fill completely (or that end
+    /// at the end of the file) count as here.
+    pub fn feed(&mut self, at: usize, bytes: &Vec<u8>) {
+        let n = self.lex.buf.len();
+        let mut k: usize = 0;
+        while k < bytes.len() && at + k < n {
+            self.lex.buf[at + k] = bytes[k];
+            k += 1;
+        }
+        if !self.sparse {
+            return;
+        }
+        let end = at + k;
+        let mut c = (at + self.chunk - 1) / self.chunk;
+        while c < self.have.len() {
+            let from = c * self.chunk;
+            let mut to = from + self.chunk;
+            if to > n {
+                to = n;
+            }
+            if from < at || to > end {
+                break;
+            }
+            self.have[c] = true;
+            c += 1;
+        }
+    }
+
+    fn want(&mut self, c: usize) {
+        let ci = c as i64;
+        if !self.need.contains(&ci) {
+            self.need.push(ci);
+        }
+        self.short = true;
+        self.misses += 1;
+    }
+
+    /// Whether bytes [from, to) are here; the missing chunks go to `need`
+    /// (all of them, or only the first when `all` is false: a read that ran
+    /// on through a hole does not know how far it really needs).
+    fn here(&mut self, from: usize, to: usize, all: bool) -> bool {
+        if !self.sparse {
+            return true;
+        }
+        let n = self.lex.buf.len();
+        let mut t = to;
+        if t > n {
+            t = n;
+        }
+        if from >= t {
+            return true;
+        }
+        let mut ok = true;
+        let mut c = from / self.chunk;
+        let last = (t - 1) / self.chunk;
+        while c <= last && c < self.have.len() {
+            if !self.have[c] {
+                self.want(c);
+                ok = false;
+                if !all {
+                    return false;
+                }
+            }
+            c += 1;
+        }
+        ok
     }
 
     fn warn(&mut self, s: &str) {
@@ -153,6 +322,9 @@ impl Doc {
 
     fn read_header(&mut self) {
         let n = self.lex.buf.len();
+        if !self.here(0, 1032, true) {
+            return;
+        }
         let mut i: usize = 0;
         while i + 8 < n && i < 1024 {
             if starts_with_at(&self.lex.buf, i, "%PDF-") {
@@ -231,6 +403,11 @@ impl Doc {
     /// The cross-reference sections from startxref along /Prev; false when
     /// they could not be read.
     fn read_xref(&mut self) -> bool {
+        let n = self.lex.buf.len();
+        let tail = if n > 4096 { n - 4096 } else { 0 };
+        if !self.here(tail, n, true) {
+            return false;
+        }
         let start = self.find_startxref();
         if start < 0 {
             self.warn("no startxref");
@@ -246,6 +423,9 @@ impl Doc {
             seen.push(off);
             sections += 1;
             let t = self.read_section(off);
+            if self.short {
+                return false;
+            }
             if !t.is_dict() {
                 if sections == 1 {
                     self.warn("bad startxref offset");
@@ -281,10 +461,19 @@ impl Doc {
         if off < 0 || (off as usize) >= self.lex.buf.len() {
             return pdf_obj::null();
         }
+        if !self.here(off as usize, (off as usize) + 1, true) {
+            return pdf_obj::null();
+        }
         self.lex.pos = off as usize;
         let t = self.lex.token();
         if t.is_cmd("xref") {
-            return self.read_table();
+            let tr = self.read_table();
+            // the table and its trailer, read through to here
+            let to = self.lex.pos + 1;
+            if !self.here(off as usize, to, false) {
+                return pdf_obj::null();
+            }
+            return tr;
         }
         // a cross-reference stream: `num gen obj << ... >> stream`
         self.lex.pos = off as usize;
@@ -386,6 +575,12 @@ impl Doc {
     /// Reads the cross-reference again by scanning the file for `n g obj`.
     pub fn repair(&mut self) {
         if self.repaired {
+            return;
+        }
+        if !self.complete() {
+            // scanning reads the whole file
+            let n = self.lex.buf.len();
+            self.here(0, n, true);
             return;
         }
         self.repaired = true;
@@ -516,6 +711,9 @@ impl Doc {
         if off >= self.lex.buf.len() {
             return pdf_obj::make(K::Eof);
         }
+        if !self.here(off, off + 1, true) {
+            return pdf_obj::make(K::Eof);
+        }
         self.lex.pos = off;
         let a = self.lex.token();
         let b = self.lex.token();
@@ -529,6 +727,11 @@ impl Doc {
         let mut o = self.lex.object(0);
         let save = self.lex.pos;
         let t = self.lex.token();
+        // the object's head (its dictionary and the keyword after it)
+        let head_end = self.lex.pos + 1;
+        if !self.here(off, head_end, false) {
+            return pdf_obj::make(K::Eof);
+        }
         if t.is_cmd("stream") && o.is_dict() {
             // the data starts after the end of line
             let mut p = self.lex.pos;
@@ -544,13 +747,23 @@ impl Doc {
                 len = len_obj.i();
             } else if len_obj.k == K::Ref {
                 let here = self.lex.pos;
+                let m = self.misses;
                 let l = self.resolve(&len_obj);
                 self.lex.pos = here;
+                if self.misses > m {
+                    return pdf_obj::make(K::Eof);
+                }
                 if l.k == K::Num {
                     len = l.i();
                 }
             }
             let n = self.lex.buf.len();
+            if len >= 0 && p + (len as usize) <= n {
+                // the data and the endstream after it
+                if !self.here(p, p + (len as usize) + 32, true) {
+                    return pdf_obj::make(K::Eof);
+                }
+            }
             let mut end: usize = 0;
             let mut good = false;
             if len >= 0 && p + (len as usize) <= n {
@@ -572,6 +785,9 @@ impl Doc {
                         break;
                     }
                     q += 1;
+                }
+                if !self.here(p, q + 9, false) {
+                    return pdf_obj::make(K::Eof);
                 }
                 if found {
                     end = q;
@@ -620,7 +836,14 @@ impl Doc {
             return pdf_obj::null();
         }
         self.busy.push(num);
+        let m = self.misses;
         let mut o = self.load(num);
+        if self.misses > m {
+            // read from a hole: not kept, and not a reason to repair
+            let nb0 = self.busy.len() - 1;
+            self.busy.truncate(nb0);
+            return pdf_obj::null();
+        }
         if o.k == K::Eof && !self.repaired {
             // the offset was wrong: read the cross-reference again by scanning
             self.repair();
@@ -630,6 +853,9 @@ impl Doc {
         self.busy.truncate(nb);
         if o.k == K::Eof {
             o = pdf_obj::null();
+        }
+        if self.misses > m {
+            return o;
         }
         self.cache.insert(num, o.clone());
         o
@@ -871,6 +1097,9 @@ impl Doc {
     fn pages_by_scan(&mut self) {
         if !self.repaired {
             self.repair();
+        }
+        if self.short {
+            return;
         }
         let n = self.x_type.len();
         let mut num: usize = 0;

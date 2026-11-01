@@ -55,6 +55,65 @@ impl PdfDocument {
         PdfDocument::open_with_fonts(b, password, fonts)
     }
 
+    /// A document of `size` bytes that come later, in chunks of `chunk`
+    /// bytes: the host feeds what needs() lists and calls restart() (for
+    /// the structure) or the same page again until short() is false.
+    pub fn open_sparse(size: i64, chunk: i64, password: &str, fonts: FontFiles) -> PdfDocument {
+        let sz: usize = if size > 0 { size as usize } else { 0 };
+        PdfDocument { doc: Doc::sparse(sz, chunk as usize, password), renderer: Renderer::new(fonts) }
+    }
+
+    /// The structure read again with the bytes fed so far.
+    pub fn restart(&mut self, password: &str) {
+        self.renderer.reset();
+        self.doc.start(password);
+    }
+
+    /// The last step (open, restart, a page) wanted bytes that were not here.
+    pub fn short(&self) -> bool {
+        self.doc.short
+    }
+
+    pub fn complete(&self) -> bool {
+        self.doc.complete()
+    }
+
+    /// The byte ranges the last step wanted, as start, end pairs; next to
+    /// each other chunks are one range.
+    pub fn needs(&self) -> Vec<i64> {
+        let mut cs: Vec<i64> = self.doc.need.clone();
+        cs.sort();
+        let size = self.doc.lex.buf.len() as i64;
+        let ch = self.doc.chunk as i64;
+        let mut out: Vec<i64> = vec![];
+        let mut i: usize = 0;
+        while i < cs.len() {
+            let from = cs[i] * ch;
+            let mut last = cs[i];
+            while i + 1 < cs.len() && cs[i + 1] == last + 1 {
+                i += 1;
+                last = cs[i];
+            }
+            let mut to = (last + 1) * ch;
+            if to > size {
+                to = size;
+            }
+            out.push(from);
+            out.push(to);
+            i += 1;
+        }
+        out
+    }
+
+    /// Bytes (as byte values) from offset `at`.
+    pub fn feed_ints(&mut self, at: i64, bytes: &Vec<i64>) {
+        let mut b: Vec<u8> = vec![];
+        for x in bytes.iter() {
+            b.push((*x & 255) as u8);
+        }
+        self.doc.feed(at as usize, &b);
+    }
+
     pub fn error(&self) -> String {
         self.doc.error.clone()
     }
@@ -81,7 +140,13 @@ impl PdfDocument {
         if i < 0 {
             return PageOut::new(0.0, 0.0);
         }
-        pdf_render::render_page(&mut self.doc, &mut self.renderer, i as usize)
+        self.doc.begin();
+        let out = pdf_render::render_page(&mut self.doc, &mut self.renderer, i as usize);
+        if self.doc.short {
+            // fonts read from a hole are read again next time
+            self.renderer.reset();
+        }
+        out
     }
 
     /// The page's text, as plain text.
@@ -146,6 +211,7 @@ impl PdfDocument {
 
     /// The document's bookmarks, in order, at most 2000.
     pub fn outline(&mut self) -> Vec<OutlineItem> {
+        self.doc.begin();
         let mut out: Vec<OutlineItem> = vec![];
         let root_ref = self.doc.trailer.at("Root");
         let root = self.doc.resolve(&root_ref);
