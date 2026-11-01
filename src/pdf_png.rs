@@ -55,69 +55,96 @@ impl Crc {
     }
 }
 
-/// `v` as 4 big-endian bytes. Helpers return new bytes: a Ranger buffer
-/// (`Vec<u8>`) cannot grow through a `&mut` parameter.
-fn be32(v: i64) -> Vec<u8> {
-    vec![((v >> 24) & 255) as u8, ((v >> 16) & 255) as u8, ((v >> 8) & 255) as u8, (v & 255) as u8]
+/// `v` as 4 big-endian bytes into `out` at `at`.
+fn put32(out: &mut Vec<u8>, at: usize, v: i64) {
+    out[at] = ((v >> 24) & 255) as u8;
+    out[at + 1] = ((v >> 16) & 255) as u8;
+    out[at + 2] = ((v >> 8) & 255) as u8;
+    out[at + 3] = (v & 255) as u8;
 }
 
-/// One PNG chunk: length, kind, data, CRC.
-fn chunk(crc: &Crc, kind: &str, data: &Vec<u8>) -> Vec<u8> {
-    let mut out: Vec<u8> = be32(data.len() as i64);
-    for b in pdf_obj::bytes_of(kind).iter() {
-        out.push(*b);
+/// A chunk's kind (4 ASCII letters) into `out` at `at`.
+fn put_kind(out: &mut Vec<u8>, at: usize, kind: &str) {
+    let k = pdf_obj::bytes_of(kind);
+    let mut i: usize = 0;
+    while i < 4 {
+        out[at + i] = k[i];
+        i += 1;
     }
-    for b in data.iter() {
-        out.push(*b);
-    }
-    let end = out.len();
-    let c = crc.of(&out, 4, end);
-    for b in c.iter() {
-        out.push(*b);
-    }
-    out
 }
 
-/// `px` is w * h * 4 bytes, RGBA, rows top to bottom.
+/// The CRC of the chunk that starts at `at` with `n` data bytes, after it.
+fn put_crc(out: &mut Vec<u8>, crc: &Crc, at: usize, n: usize) {
+    let c = crc.of(out, at + 4, at + 8 + n);
+    let mut i: usize = 0;
+    while i < 4 {
+        out[at + 8 + n + i] = c[i];
+        i += 1;
+    }
+}
+
+/// `px` is w * h * 4 bytes, RGBA, rows top to bottom. The file is written
+/// into one buffer of its final size: a Ranger buffer that grows is copied
+/// on every push on most targets, which made a page's PNG take minutes.
 pub fn encode_rgba(w: i64, h: i64, px: &Vec<u8>) -> Vec<u8> {
     let crc = Crc::new();
-    let mut out: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10];
-    let mut ihdr: Vec<u8> = be32(w);
-    for b in be32(h).iter() {
-        ihdr.push(*b);
-    }
-    ihdr.push(8); // bit depth
-    ihdr.push(6); // RGBA
-    ihdr.push(0);
-    ihdr.push(0);
-    ihdr.push(0);
-    for b in chunk(&crc, "IHDR", &ihdr).iter() {
-        out.push(*b);
-    }
     // the scanlines with filter type 0, in stored deflate blocks
     let row = (w * 4) as usize;
     let total = (h as usize) * (row + 1);
-    let mut z: Vec<u8> = vec![0x78, 0x01];
+    let mut blocks: usize = (total + 65534) / 65535;
+    if blocks == 0 {
+        blocks = 1;
+    }
+    let zlen = 2 + blocks * 5 + total + 4;
+    let ihdr_at: usize = 8;
+    let idat_at: usize = ihdr_at + 12 + 13;
+    let iend_at: usize = idat_at + 12 + zlen;
+    let size = iend_at + 12;
+    let mut out: Vec<u8> = vec![0; size];
+    let sig: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10];
+    let mut i: usize = 0;
+    while i < 8 {
+        out[i] = sig[i];
+        i += 1;
+    }
+    put32(&mut out, ihdr_at, 13);
+    put_kind(&mut out, ihdr_at + 4, "IHDR");
+    put32(&mut out, ihdr_at + 8, w);
+    put32(&mut out, ihdr_at + 12, h);
+    out[ihdr_at + 16] = 8; // bit depth
+    out[ihdr_at + 17] = 6; // RGBA
+    // compression, filter, interlace stay 0
+    put_crc(&mut out, &crc, ihdr_at, 13);
+    put32(&mut out, idat_at, zlen as i64);
+    put_kind(&mut out, idat_at + 4, "IDAT");
+    let mut p: usize = idat_at + 8;
+    out[p] = 0x78;
+    out[p + 1] = 0x01;
+    p += 2;
     let mut s1: i64 = 1;
     let mut s2: i64 = 0;
     let mut done: usize = 0;
     let mut y: usize = 0;
     let mut x: usize = 0; // position in the row, 0 = the filter byte
-    while done < total {
+    let mut first = true;
+    while first || done < total {
+        first = false;
         let mut n = total - done;
         if n > 65535 {
             n = 65535;
         }
-        z.push(if done + n == total { 1 } else { 0 });
-        z.push((n & 255) as u8);
-        z.push(((n >> 8) & 255) as u8);
+        out[p] = if done + n == total { 1 } else { 0 };
+        out[p + 1] = (n & 255) as u8;
+        out[p + 2] = ((n >> 8) & 255) as u8;
         let nn = 65535 - n;
-        z.push((nn & 255) as u8);
-        z.push(((nn >> 8) & 255) as u8);
+        out[p + 3] = (nn & 255) as u8;
+        out[p + 4] = ((nn >> 8) & 255) as u8;
+        p += 5;
         let mut k: usize = 0;
         while k < n {
             let b: u8 = if x == 0 { 0 } else { px[y * row + x - 1] };
-            z.push(b);
+            out[p] = b;
+            p += 1;
             s1 = (s1 + (b as i64)) % 65521;
             s2 = (s2 + s1) % 65521;
             x += 1;
@@ -129,23 +156,13 @@ pub fn encode_rgba(w: i64, h: i64, px: &Vec<u8>) -> Vec<u8> {
         }
         done += n;
     }
-    if total == 0 {
-        z.push(1);
-        z.push(0);
-        z.push(0);
-        z.push(255);
-        z.push(255);
-    }
-    z.push(((s2 >> 8) & 255) as u8);
-    z.push((s2 & 255) as u8);
-    z.push(((s1 >> 8) & 255) as u8);
-    z.push((s1 & 255) as u8);
-    for b in chunk(&crc, "IDAT", &z).iter() {
-        out.push(*b);
-    }
-    let none: Vec<u8> = vec![];
-    for b in chunk(&crc, "IEND", &none).iter() {
-        out.push(*b);
-    }
+    out[p] = ((s2 >> 8) & 255) as u8;
+    out[p + 1] = (s2 & 255) as u8;
+    out[p + 2] = ((s1 >> 8) & 255) as u8;
+    out[p + 3] = (s1 & 255) as u8;
+    put_crc(&mut out, &crc, idat_at, zlen);
+    put32(&mut out, iend_at, 0);
+    put_kind(&mut out, iend_at + 4, "IEND");
+    put_crc(&mut out, &crc, iend_at, 0);
     out
 }

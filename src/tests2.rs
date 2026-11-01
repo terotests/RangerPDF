@@ -173,6 +173,22 @@ fn viewer(c: &mut Check) {
     let raw = pdf_inflate::inflate(&z);
     c.ok("inflates", raw.ok);
     c.eq("scanline", &format!("{:?}", raw.data), "[0, 255, 0, 0, 255]");
+    // a page-sized picture (several deflate blocks) in one buffer: a push
+    // per byte copied it on most targets and took minutes in the window
+    let (bw, bh): (i64, i64) = (512, 725);
+    let bn = (bw * bh * 4) as usize;
+    let mut big: Vec<u8> = vec![0; bn];
+    let mut bi: usize = 0;
+    while bi < bn {
+        big[bi] = ((bi * 7) % 251) as u8;
+        bi += 1;
+    }
+    let bf = pdf_png::encode_rgba(bw, bh, &big);
+    c.eqi("big length", bf.len() as i64, 1485703);
+    let blen = ((bf[33] as usize) << 24) | ((bf[34] as usize) << 16) | ((bf[35] as usize) << 8) | (bf[36] as usize);
+    let braw = pdf_inflate::inflate(&part(&bf, 41, 41 + blen));
+    c.ok("big inflates", braw.ok && braw.data.len() == (bh * (bw * 4 + 1)) as usize);
+    c.eqi("big last pixel byte", braw.data[braw.data.len() - 1] as i64, (((bn - 1) * 7) % 251) as i64);
     let mut d = PdfDocument::open(simple_pdf("1 0 0 rg 0 0 100 100 re f"), "");
     let pf = d.page_png(0, 400.0);
     c.eq("size", &format!("{:?}", part(&pf, 16, 24)), "[0, 0, 1, 144, 0, 0, 0, 200]");
