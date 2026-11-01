@@ -34,7 +34,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let dir = &args[1];
     let chunk: i64 = if args.len() > 2 { args[2].parse().unwrap() } else { 65536 };
-    let mut names: Vec<_> = std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "pdf").unwrap_or(false)).collect();
+    let mut names: Vec<_> = if std::path::Path::new(dir).is_file() { vec![std::path::PathBuf::from(dir)] } else { std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|x| x == "pdf").unwrap_or(false)).collect() };
     names.sort();
     let (mut same, mut diff, mut total, mut read_open, mut read_first) = (0, 0, 0i64, 0i64, 0i64);
     for p in names.iter() {
