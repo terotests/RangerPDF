@@ -135,12 +135,8 @@ impl Doc {
     /// A document of `size` bytes none of which are here yet; the host
     /// feeds chunks of `chunk` bytes and calls start() until `short` is off.
     pub fn sparse(size: usize, chunk: usize, password: &str) -> Doc {
-        let mut buf: Vec<u8> = vec![];
-        let mut i: usize = 0;
-        while i < size {
-            buf.push(0);
-            i += 1;
-        }
+        // one buffer of the file's size (pushes copy it in Go)
+        let buf: Vec<u8> = vec![0; size];
         let mut d = Doc::blank(buf);
         d.sparse = true;
         d.chunk = if chunk < 1024 { 1024 } else { chunk };
@@ -814,10 +810,12 @@ impl Doc {
                     end = n;
                 }
             }
-            let mut data: Vec<u8> = vec![];
+            // in a buffer of its final size (pushes copy it in Go)
+            let dn: usize = if end > p { end - p } else { 0 };
+            let mut data: Vec<u8> = vec![0; dn];
             let mut k = p;
             while k < end {
-                data.push(self.lex.buf[k]);
+                data[k - p] = self.lex.buf[k];
                 k += 1;
             }
             o.k = K::Stream;
