@@ -49,4 +49,6 @@ PASS pdf:api page sizes and errors
 PASS pdf:png page as PNG
 PASS pdf:find find on a page
 PASS pdf:outline bookmarks
-ALL PASS 39
+PASS pdf:png compressed PNG round trip
+PASS pdf:svg page as SVG
+ALL PASS 41

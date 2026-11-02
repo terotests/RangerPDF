@@ -14,6 +14,7 @@ use crate::pdf_png;
 use crate::pdf_raster;
 use crate::pdf_render;
 use crate::pdf_render::Renderer;
+use crate::pdf_svg;
 
 /// A bookmark: its title, depth (1 for the top level) and page (-1 when its
 /// destination is not a page of this file).
@@ -184,6 +185,15 @@ impl PdfDocument {
         let scale = if p.width > 0.0 { width_px / p.width } else { 1.0 };
         let r = pdf_raster::rasterize(&p, scale);
         pdf_png::encode_rgba(r.w, r.h, &r.px)
+    }
+
+    /// Page `i` turned clockwise by `quarter` quarter turns, as an SVG
+    /// file (pdf_svg): the page's vectors for a host that draws them.
+    pub fn page_svg(&mut self, i: i64, quarter: i64) -> String {
+        self.renderer.keep_glyphs = true;
+        let p = self.render(i);
+        self.renderer.keep_glyphs = false;
+        pdf_svg::page_svg(&p, quarter)
     }
 
     /// Page `i` turned clockwise by `quarter` quarter turns, as a PNG

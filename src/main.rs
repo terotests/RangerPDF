@@ -25,6 +25,7 @@ mod pdf_picture;
 mod pdf_png;
 mod pdf_raster;
 mod pdf_render;
+mod pdf_svg;
 mod tests;
 mod tests2;
 mod pdf_tiff;

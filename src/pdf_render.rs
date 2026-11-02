@@ -65,11 +65,14 @@ pub struct Renderer {
     pub tol: f64,
     /// stop a page after this many operators
     pub max_ops: i64,
+    /// filled glyphs as GLYPH commands with their outlines kept once
+    /// (pdf_svg), not flattened into FILL commands
+    pub keep_glyphs: bool,
 }
 
 impl Renderer {
     pub fn new(files: FontFiles) -> Renderer {
-        Renderer { glyphs: Glyphs::load(), files: files, fonts: vec![], font_keys: vec![], tol: 0.1, max_ops: 3000000 }
+        Renderer { glyphs: Glyphs::load(), files: files, fonts: vec![], font_keys: vec![], tol: 0.1, max_ops: 3000000, keep_glyphs: false }
     }
 
     /// Forget the fonts (a new document).
@@ -924,7 +927,11 @@ fn show(doc: &mut Doc, r: &mut Renderer, run: &mut Run, s: &Vec<u8>, res: &Obj) 
             } else if r.fonts[fi].has_outlines() {
                 let g = r.fonts[fi].outline(c.code);
                 if !g.is_empty() {
-                    glyph(r, run, &g, &trm, mode);
+                    if r.keep_glyphs && mode == 0 {
+                        kept_glyph(run, &g, &format!("{}:{}", fi, c.code), &trm);
+                    } else {
+                        glyph(r, run, &g, &trm, mode);
+                    }
                 }
             } else if c.code != 32 || !c.text.is_empty() && c.text != " " {
                 let f = &r.fonts[fi];
@@ -943,6 +950,31 @@ fn show(doc: &mut Doc, r: &mut Renderer, run: &mut Run, s: &Vec<u8>, res: &Obj) 
         let t: Vec<f64> = if vertical { vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0 - adv] } else { vec![1.0, 0.0, 0.0, 1.0, adv * th, 0.0] };
         run.tm = pdf_path::mat_mul(&t, &run.tm);
     }
+}
+
+/// a filled glyph as a GLYPH command, its outline kept once per page
+fn kept_glyph(run: &mut Run, g: &Path, key: &str, trm: &Vec<f64>) {
+    if run.gs.fill_none {
+        return;
+    }
+    let mut at: i64 = -1;
+    let mut k: usize = 0;
+    while k < run.out.glyph_keys.len() {
+        if run.out.glyph_keys[k] == key {
+            at = k as i64;
+            break;
+        }
+        k += 1;
+    }
+    if at < 0 {
+        at = run.out.glyphs.len() as i64;
+        run.out.glyphs.push(g.clone());
+        run.out.glyph_keys.push(key.to_string());
+    }
+    let mut c = color_cmd(pdf_display::GLYPH, &run.gs.fill, run.gs.fill_a);
+    c.image = at;
+    c.m = trm.clone();
+    run.out.cmds.push(c);
 }
 
 fn glyph(r: &mut Renderer, run: &mut Run, g: &Path, trm: &Vec<f64>, mode: i64) {
