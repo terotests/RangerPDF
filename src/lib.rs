@@ -25,6 +25,7 @@ pub mod pdf_picture;
 mod pdf_png;
 pub mod pdf_raster;
 mod pdf_render;
+mod pdf_svg;
 mod pdf_tiff;
 mod pdf_truetype;
 mod pdf_type1;

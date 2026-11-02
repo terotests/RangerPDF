@@ -3,6 +3,7 @@
 //! and the text with its positions for search and selection.
 
 use crate::pdf_image::Img;
+use crate::pdf_path::Path;
 
 pub const FILL: i64 = 0;
 pub const STROKE: i64 = 1;
@@ -13,6 +14,10 @@ pub const UNCLIP: i64 = 3;
 pub const IMAGE: i64 = 4;
 /// text in a font the host draws: `text` at `m` (glyph space at size 1, y up)
 pub const TEXT: i64 = 5;
+/// glyph `image` of `PageOut::glyphs` (its outline at size 1, y up) filled
+/// at `m`: only when the renderer keeps glyphs (`Renderer::keep_glyphs`,
+/// for pdf_svg), else glyphs are FILL commands
+pub const GLYPH: i64 = 6;
 
 #[derive(Clone, Debug)]
 pub struct Cmd {
@@ -84,11 +89,14 @@ pub struct PageOut {
     pub images: Vec<Img>,
     pub text: Vec<TextItem>,
     pub warnings: Vec<String>,
+    /// the outlines GLYPH commands use, each once, and their keys
+    pub glyphs: Vec<Path>,
+    pub glyph_keys: Vec<String>,
 }
 
 impl PageOut {
     pub fn new(w: f64, h: f64) -> PageOut {
-        PageOut { width: w, height: h, cmds: vec![], images: vec![], text: vec![], warnings: vec![] }
+        PageOut { width: w, height: h, cmds: vec![], images: vec![], text: vec![], warnings: vec![], glyphs: vec![], glyph_keys: vec![] }
     }
 
     pub fn warn(&mut self, s: &str) {

@@ -8,6 +8,7 @@ use crate::pdf::PdfDocument;
 use crate::pdf_picture;
 use crate::pdf_png;
 use crate::pdf_raster;
+use crate::pdf_svg;
 use crate::pdf_type1::Type1;
 use crate::pdf_font::FontFiles;
 use crate::tests::build_pdf;
@@ -284,9 +285,8 @@ fn entry(head: &str, cs: &Vec<u8>, tail: &str) -> Vec<u8> {
     with_text(&cat(&start, cs), tail)
 }
 
-fn type1(c: &mut Check) {
-    c.test("pdf:type1", "embedded Type 1 font with Subrs and an encoding");
-    // as Word, TeX and Ghostscript write them: `/Subrs N array`, `/name len RD`
+/// A Type 1 font with one glyph, A, drawn through a Subr.
+fn t1_font() -> Vec<u8> {
     let subr = t1_charstring(vec![248, 136, 139, 5, 11]); // 500 0 rlineto return
     let a = t1_charstring(vec![139, 248, 136, 13, 239, 239, 21, 139, 10, 139, 248, 136, 5, 9, 14]);
     let notdef = t1_charstring(vec![139, 248, 136, 13, 14]);
@@ -309,6 +309,13 @@ fn type1(c: &mut Check) {
     }
     f = with_text(&f, &h);
     f = with_text(&f, "\ncleartomark\n");
+    f
+}
+
+fn type1(c: &mut Check) {
+    c.test("pdf:type1", "embedded Type 1 font with Subrs and an encoding");
+    // as Word, TeX and Ghostscript write them: `/Subrs N array`, `/name len RD`
+    let f = t1_font();
     let t = Type1::parse(&f, 0);
     c.eq("ok", if t.ok { "yes" } else { "no" }, "yes");
     c.eq("encoding", &t.encoding[65], "A");
@@ -449,6 +456,7 @@ pub fn run_all(c: &mut Check) {
     text(c);
     api(c);
     viewer(c);
+    svg(c);
 }
 
 /// `x` with `d` decimals (the `{:.N}` format is not on every target).
@@ -603,4 +611,98 @@ fn sparse(c: &mut Check) {
     let tb = sparse_text(&mut d2, 1, &bad, &mut fed2);
     c.eq("big page", &tb.trim().to_string(), "Two");
     c.eqi("read all", fed2[0], bad.len() as i64);
+}
+
+/// How often `part` occurs in `s`.
+fn count_of(s: &str, part: &str) -> i64 {
+    let mut n: i64 = 0;
+    let mut rest = s.to_string();
+    let k = part.as_bytes().len();
+    loop {
+        match rest.find(part) {
+            Some(i) => {
+                n += 1;
+                rest = rest[(i + k)..].to_string();
+            }
+            None => break,
+        }
+    }
+    n
+}
+
+fn svg(c: &mut Check) {
+    c.test("pdf:png", "compressed PNG round trip");
+    // flat areas, gradients and noise: every row filter and long matches
+    let (w, h): (i64, i64) = (97, 61);
+    let n = (w * h * 4) as usize;
+    let mut px: Vec<u8> = vec![0; n];
+    let mut seed: i64 = 12345;
+    let mut i: usize = 0;
+    while i < n {
+        let p = (i / 4) as i64;
+        let x = p % w;
+        let y = p / w;
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        let v: i64 = if y < 20 {
+            200
+        } else if y < 40 {
+            (x * 2 + y + (i % 4) as i64 * 30) % 256
+        } else {
+            (seed >> 16) % 256
+        };
+        px[i] = v as u8;
+        i += 1;
+    }
+    let small = pdf_png::encode_rgba_small(w, h, &px);
+    let stored = pdf_png::encode_rgba(w, h, &px);
+    c.ok(&format!("smaller {} < {}", small.len(), stored.len()), small.len() < stored.len() * 3 / 4);
+    let mut ints: Vec<i64> = vec![];
+    for b in small.iter() {
+        ints.push(*b as i64);
+    }
+    let back = pdf_picture::PicImage::open_ints(&ints);
+    c.ok("decodes", back.ok);
+    c.eq("size", &format!("{}x{}", back.w, back.h), "97x61");
+    let mut same = back.rgba.len() == n;
+    let mut j: usize = 0;
+    while same && j < n {
+        same = back.rgba[j] == px[j];
+        j += 1;
+    }
+    c.ok("same pixels", same);
+    let flat: Vec<u8> = vec![9; 400 * 300 * 4];
+    let fl = pdf_png::encode_rgba_small(400, 300, &flat);
+    c.ok(&format!("flat page {} bytes", fl.len()), fl.len() < 6000);
+
+    c.test("pdf:svg", "page as SVG");
+    let mut d = PdfDocument::open(simple_pdf("1 0 0 rg 10 10 50 50 re f 0 0 1 RG 2 w 0 0 m 100 100 l S BT /F1 10 Tf 10 50 Td (oooo) Tj ET"), "");
+    let s = d.page_svg(0, 0);
+    c.ok("svg root", s.starts_with("<svg"));
+    c.ok("view box", s.contains("viewBox=\"0 0 200 100\""));
+    c.ok("red fill", s.contains("fill=\"#ff0000\""));
+    c.ok("blue stroke", s.contains("stroke=\"#0000ff\""));
+    c.ok("stroke width", s.contains("stroke-width=\"2\""));
+    c.eqi("host font text", count_of(&s, "<text "), 4);
+    c.ok("ends", s.trim().ends_with("</svg>"));
+    // an embedded font: each outline is written once and used per glyph
+    let font = t1_font();
+    let fs = pdf_obj::latin1(&font);
+    let content = "BT /F1 10 Tf 10 50 Td (AAAA) Tj ET";
+    let objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 100] >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}\nendstream", content.chars().count(), content),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Test /FirstChar 65 /LastChar 65 /Widths [500] /FontDescriptor 6 0 R >>".to_string(),
+        "<< /Type /FontDescriptor /FontName /Test /Flags 32 /FontBBox [0 0 600 600] /FontFile 7 0 R >>".to_string(),
+        format!("<< /Length {} /Length1 {} /Length2 0 /Length3 0 >>\nstream\n{}\nendstream", font.len(), font.len(), fs),
+    ];
+    let mut de = PdfDocument::open(build_pdf(&objs, ""), "");
+    let se = de.page_svg(0, 0);
+    c.eqi("glyph defined once", count_of(&se, "<path id=\"g"), 1);
+    c.eqi("glyph used 4 times", count_of(&se, "<use "), 4);
+    c.eqi("no host text", count_of(&se, "<text "), 0);
+    let t = d.page_svg(0, 1);
+    c.ok("turned", t.contains("matrix(0 1 -1 0 100 0)"));
+    c.eq("numbers", &format!("{} {} {} {}", pdf_svg::num(1.0), pdf_svg::num(0.125), pdf_svg::num(-2.5), pdf_svg::num(100.004)), "1 0.13 -2.5 100");
 }
