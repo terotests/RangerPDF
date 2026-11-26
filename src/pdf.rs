@@ -256,7 +256,7 @@ impl PdfDocument {
 
     fn outline_level(&mut self, root: &Obj, first: &Obj, level: i64, seen: &mut Vec<i64>, out: &mut Vec<OutlineItem>) {
         let mut cur = first.clone();
-        while cur.k == K::Ref && out.len() < 2000 && level < 20 {
+        while cur.kind() == K::Ref && out.len() < 2000 && level < 20 {
             let n = cur.i();
             if seen.contains(&n) {
                 return;
@@ -277,7 +277,7 @@ impl PdfDocument {
             let page = self.dest_page(root, &dest, 0);
             out.push(OutlineItem { title: t.text().trim().to_string(), level: level, page: page });
             let kid = it.at("First");
-            if kid.k == K::Ref {
+            if kid.kind() == K::Ref {
                 self.outline_level(root, &kid, level + 1, seen, out);
             }
             cur = it.at("Next");
@@ -290,12 +290,12 @@ impl PdfDocument {
             return -1;
         }
         let d = self.doc.resolve(dest);
-        if d.k == K::Arr {
+        if d.kind() == K::Arr {
             if d.len() == 0 {
                 return -1;
             }
             let p = d.item(0);
-            if p.k == K::Ref {
+            if p.kind() == K::Ref {
                 let n = p.i();
                 let mut i: usize = 0;
                 while i < self.doc.pages.len() {
@@ -306,7 +306,7 @@ impl PdfDocument {
                 }
                 return -1;
             }
-            if p.k == K::Num {
+            if p.kind() == K::Num {
                 return p.i();
             }
             return -1;
@@ -315,7 +315,7 @@ impl PdfDocument {
             let dd = d.at("D");
             return self.dest_page(root, &dd, depth + 1);
         }
-        let key = if d.k == K::Name { d.name.clone() } else if d.k == K::Str { pdf_obj::latin1(&d.s) } else { String::new() };
+        let key = if d.kind() == K::Name { d.word().clone() } else if d.kind() == K::Str { pdf_obj::latin1(d.raw()) } else { String::new() };
         if key.is_empty() {
             return -1;
         }
@@ -342,18 +342,18 @@ impl PdfDocument {
             return pdf_obj::null();
         }
         let names = self.doc.get_key(&node, "Names");
-        if names.k == K::Arr {
+        if names.kind() == K::Arr {
             let mut i: usize = 0;
             while i + 1 < names.len() {
                 let k = self.doc.resolve(&names.item(i));
-                if pdf_obj::latin1(&k.s) == key {
+                if pdf_obj::latin1(k.raw()) == key {
                     return names.item(i + 1);
                 }
                 i += 2;
             }
         }
         let kids = self.doc.get_key(&node, "Kids");
-        if kids.k == K::Arr {
+        if kids.kind() == K::Arr {
             let mut i: usize = 0;
             while i < kids.len() {
                 let v = self.name_lookup(&kids.item(i), key, depth + 1);

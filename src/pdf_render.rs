@@ -164,8 +164,8 @@ fn num_at(st: &Vec<Obj>, i: usize) -> f64 {
 fn nums(st: &Vec<Obj>) -> Vec<f64> {
     let mut v: Vec<f64> = vec![];
     for o in st.iter() {
-        if o.k == K::Num {
-            v.push(o.n);
+        if o.kind() == K::Num {
+            v.push(o.f());
         }
     }
     v
@@ -230,7 +230,7 @@ pub fn render_page(doc: &mut Doc, r: &mut Renderer, page: usize) -> PageOut {
 /// The normal appearances of the page's annotations that are not hidden.
 fn annotations(doc: &mut Doc, r: &mut Renderer, run: &mut Run, p: &crate::pdf_doc::Page, base: &Vec<f64>, w: f64, h: f64) {
     let annots = doc.get_key(&p.dict, "Annots");
-    if annots.k != K::Arr {
+    if annots.kind() != K::Arr {
         return;
     }
     run.annot = true;
@@ -251,15 +251,15 @@ fn annotations(doc: &mut Doc, r: &mut Renderer, run: &mut Run, p: &crate::pdf_do
         }
         let mut nref = ap.at("N");
         let mut n = doc.resolve(&nref);
-        if n.is_dict() && n.k != K::Stream {
+        if n.is_dict() && n.kind() != K::Stream {
             let st = doc.get_key(&a, "AS");
-            if st.k != K::Name || !n.has(&st.name) {
+            if st.kind() != K::Name || !n.has(st.word()) {
                 continue;
             }
-            nref = n.at(&st.name);
+            nref = n.at(st.word());
             n = doc.resolve(&nref);
         }
-        if n.k != K::Stream {
+        if n.kind() != K::Stream {
             continue;
         }
         let rect = doc.get_key(&a, "Rect").nums();
@@ -333,10 +333,10 @@ fn run_content(doc: &mut Doc, r: &mut Renderer, run: &mut Run, content: Vec<u8>,
     let start_stack = run.stack.len();
     loop {
         let t = lx.token();
-        if t.k == K::Eof {
+        if t.kind() == K::Eof {
             break;
         }
-        if t.k != K::Cmd || t.name == "[" || t.name == "<<" {
+        if t.kind() != K::Cmd || t.word() == "[" || t.word() == "<<" {
             let o = lx.object_from(t, 0);
             st.push(o);
             if st.len() > 4000 {
@@ -349,7 +349,7 @@ fn run_content(doc: &mut Doc, r: &mut Renderer, run: &mut Run, content: Vec<u8>,
             run.out.warn("too many operators: page cut short");
             break;
         }
-        let op = t.name.clone();
+        let op = t.word().clone();
         if op == "BI" {
             inline_image(doc, r, run, &mut lx, res);
             st = vec![];
@@ -490,8 +490,8 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
         return;
     }
     if op == "gs" {
-        if n >= 1 && st[0].k == K::Name {
-            ext_gstate(doc, r, run, &st[0].name, res);
+        if n >= 1 && st[0].kind() == K::Name {
+            ext_gstate(doc, r, run, st[0].word(), res);
         }
         return;
     }
@@ -540,7 +540,7 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
         let fill = op == "sc" || op == "scn";
         let comps = nums(st);
         let mut pat = pdf_obj::null();
-        if n >= 1 && st[n - 1].k == K::Name {
+        if n >= 1 && st[n - 1].kind() == K::Name {
             pat = st[n - 1].clone();
         }
         let cs = if fill { run.gs.fill_cs.clone() } else { run.gs.stroke_cs.clone() };
@@ -639,7 +639,7 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
     }
     if op == "Tj" {
         if n >= 1 {
-            let s = st[n - 1].s.clone();
+            let s = st[n - 1].raw().clone();
             show(doc, r, run, &s, res);
         }
         return;
@@ -647,7 +647,7 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
     if op == "'" {
         next_line(run);
         if n >= 1 {
-            let s = st[n - 1].s.clone();
+            let s = st[n - 1].raw().clone();
             show(doc, r, run, &s, res);
         }
         return;
@@ -657,22 +657,22 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
             run.gs.tw = st[0].f();
             run.gs.tc = st[1].f();
             next_line(run);
-            let s = st[2].s.clone();
+            let s = st[2].raw().clone();
             show(doc, r, run, &s, res);
         }
         return;
     }
     if op == "TJ" {
-        if n >= 1 && st[n - 1].k == K::Arr {
+        if n >= 1 && st[n - 1].kind() == K::Arr {
             let a = st[n - 1].clone();
-            for x in a.items.iter() {
-                if x.k == K::Str {
-                    let s = x.s.clone();
+            for x in a.items().iter() {
+                if x.kind() == K::Str {
+                    let s = x.raw().clone();
                     show(doc, r, run, &s, res);
-                } else if x.k == K::Num {
-                    let adj = 0.0 - x.n / 1000.0 * run.gs.fs * run.gs.th;
+                } else if x.kind() == K::Num {
+                    let adj = 0.0 - x.f() / 1000.0 * run.gs.fs * run.gs.th;
                     let vertical = run.gs.font >= 0 && r.fonts[run.gs.font as usize].vertical;
-                    let t: Vec<f64> = if vertical { vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0 - x.n / 1000.0 * run.gs.fs] } else { vec![1.0, 0.0, 0.0, 1.0, adj, 0.0] };
+                    let t: Vec<f64> = if vertical { vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0 - x.f() / 1000.0 * run.gs.fs] } else { vec![1.0, 0.0, 0.0, 1.0, adj, 0.0] };
                     run.tm = pdf_path::mat_mul(&t, &run.tm);
                 }
             }
@@ -681,15 +681,15 @@ fn exec(doc: &mut Doc, r: &mut Renderer, run: &mut Run, op: &str, st: &Vec<Obj>,
     }
     // XObjects, shadings, Type 3 metrics
     if op == "Do" {
-        if n >= 1 && st[0].k == K::Name {
-            do_xobject(doc, r, run, &st[0].name, res);
+        if n >= 1 && st[0].kind() == K::Name {
+            do_xobject(doc, r, run, st[0].word(), res);
         }
         return;
     }
     if op == "sh" {
-        if n >= 1 && st[0].k == K::Name {
+        if n >= 1 && st[0].kind() == K::Name {
             let shd = doc.get_key(res, "Shading");
-            let sh = doc.get_key(&shd, &st[0].name);
+            let sh = doc.get_key(&shd, st[0].word());
             let ctm = run.gs.ctm.clone();
             let bx = run.gs.clip_box.clone();
             shade(doc, run, &sh, &ctm, &bx, res);
@@ -817,9 +817,9 @@ fn ext_gstate(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &str, res: &
         return;
     }
     let mut i: usize = 0;
-    while i < g.keys.len() {
-        let k = g.keys[i].clone();
-        let v = doc.resolve(&g.items[i]);
+    while i < g.keys().len() {
+        let k = g.keys()[i].clone();
+        let v = doc.resolve(&g.items()[i]);
         if k == "LW" {
             run.gs.lw = v.f();
         } else if k == "LC" {
@@ -828,17 +828,17 @@ fn ext_gstate(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &str, res: &
             run.gs.join = v.i();
         } else if k == "ML" {
             run.gs.miter = v.f();
-        } else if k == "D" && v.k == K::Arr && v.items.len() >= 2 {
-            let d0 = doc.resolve(&v.items[0]);
+        } else if k == "D" && v.kind() == K::Arr && v.items().len() >= 2 {
+            let d0 = doc.resolve(&v.items()[0]);
             run.gs.dash = d0.nums();
-            run.gs.phase = doc.resolve(&v.items[1]).f();
+            run.gs.phase = doc.resolve(&v.items()[1]).f();
         } else if k == "CA" {
             run.gs.stroke_a = v.f();
         } else if k == "ca" {
             run.gs.fill_a = v.f();
-        } else if k == "Font" && v.k == K::Arr && v.items.len() >= 2 {
-            let fref = v.items[0].clone();
-            run.gs.fs = doc.resolve(&v.items[1]).f();
+        } else if k == "Font" && v.kind() == K::Arr && v.items().len() >= 2 {
+            let fref = v.items()[0].clone();
+            run.gs.fs = doc.resolve(&v.items()[1]).f();
             run.gs.font = load_font(doc, r, &fref);
         }
         i += 1;
@@ -847,7 +847,7 @@ fn ext_gstate(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &str, res: &
 
 fn font_index(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &Obj, res: &Obj) -> i64 {
     let fonts = doc.get_key(res, "Font");
-    let fref = fonts.at(&name.name);
+    let fref = fonts.at(name.word());
     if fref.is_null() {
         if !run.fontless {
             run.out.warn("a font that is not in the resources");
@@ -859,7 +859,7 @@ fn font_index(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &Obj, res: &
 }
 
 fn load_font(doc: &mut Doc, r: &mut Renderer, fref: &Obj) -> i64 {
-    let key = if fref.k == K::Ref { fref.i() } else { -1 };
+    let key = if fref.kind() == K::Ref { fref.i() } else { -1 };
     if key >= 0 {
         let mut i: usize = 0;
         while i < r.font_keys.len() {
@@ -1012,12 +1012,12 @@ fn type3_glyph(doc: &mut Doc, r: &mut Renderer, run: &mut Run, fi: usize, code: 
     let name = r.fonts[fi].enc[code as usize].clone();
     let procs = r.fonts[fi].procs.clone();
     let proc_ref = procs.at(&name);
-    let pnum = if proc_ref.k == K::Ref { proc_ref.i() } else { -1 };
+    let pnum = if proc_ref.kind() == K::Ref { proc_ref.i() } else { -1 };
     if pnum >= 0 && run.forms.contains(&pnum) {
         return;
     }
     let proc = doc.resolve(&proc_ref);
-    if proc.k != K::Stream {
+    if proc.kind() != K::Stream {
         return;
     }
     let data = doc.stream_data(&proc);
@@ -1054,10 +1054,10 @@ fn do_xobject(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &str, res: &
     let xs = doc.get_key(res, "XObject");
     let xref = xs.at(name);
     let x = doc.resolve(&xref);
-    if x.k != K::Stream {
+    if x.kind() != K::Stream {
         return;
     }
-    let st = doc.get_key(&x, "Subtype").name.clone();
+    let st = doc.get_key(&x, "Subtype").word().clone();
     if st == "Image" {
         draw_image(doc, run, &x, res);
         return;
@@ -1072,7 +1072,7 @@ fn do_xobject(doc: &mut Doc, r: &mut Renderer, run: &mut Run, name: &str, res: &
 /// Form XObject `x` (`xref` its reference); `pre` maps form space after its
 /// /Matrix (an annotation's appearance), empty for none.
 fn draw_form(doc: &mut Doc, r: &mut Renderer, run: &mut Run, xref: &Obj, x: &Obj, res: &Obj, pre: &Vec<f64>) {
-    let num = if xref.k == K::Ref { xref.i() } else { -1 };
+    let num = if xref.kind() == K::Ref { xref.i() } else { -1 };
     if num >= 0 && run.forms.contains(&num) {
         return;
     }
@@ -1162,8 +1162,8 @@ fn expand_inline_key(k: &str) -> String {
 }
 
 fn expand_inline_value(v: &Obj) -> Obj {
-    if v.k == K::Name {
-        let n = v.name.clone();
+    if v.kind() == K::Name {
+        let n = v.word().clone();
         let full = if n == "G" {
             "DeviceGray"
         } else if n == "RGB" {
@@ -1194,9 +1194,9 @@ fn expand_inline_value(v: &Obj) -> Obj {
         }
         return v.clone();
     }
-    if v.k == K::Arr {
+    if v.kind() == K::Arr {
         let mut a = pdf_obj::arr();
-        for x in v.items.iter() {
+        for x in v.items().iter() {
             a.push(expand_inline_value(x));
         }
         return a;
@@ -1209,15 +1209,15 @@ fn inline_image(doc: &mut Doc, r: &mut Renderer, run: &mut Run, lx: &mut PdfLexe
     let mut d = pdf_obj::dict();
     loop {
         let k = lx.token();
-        if k.k == K::Eof {
+        if k.kind() == K::Eof {
             return;
         }
         if k.is_cmd("ID") {
             break;
         }
-        if k.k == K::Name {
+        if k.kind() == K::Name {
             let v = lx.object(0);
-            d.set(&expand_inline_key(&k.name), expand_inline_value(&v));
+            d.set(&expand_inline_key(k.word()), expand_inline_value(&v));
         }
     }
     // one white-space byte after ID
@@ -1228,7 +1228,7 @@ fn inline_image(doc: &mut Doc, r: &mut Renderer, run: &mut Run, lx: &mut PdfLexe
     let w = d.at("Width").i();
     let h = d.at("Height").i();
     let mut bpc = d.at("BitsPerComponent").i();
-    let im = d.at("ImageMask").k == K::Bool && d.at("ImageMask").n == 1.0;
+    let im = d.at("ImageMask").kind() == K::Bool && d.at("ImageMask").f() == 1.0;
     if bpc <= 0 || im {
         bpc = if im { 1 } else { 8 };
     }
@@ -1242,7 +1242,7 @@ fn inline_image(doc: &mut Doc, r: &mut Renderer, run: &mut Run, lx: &mut PdfLexe
             nc = 3;
         } else if csn.is_name("DeviceCMYK") {
             nc = 4;
-        } else if csn.k == K::Name && !csn.is_name("DeviceGray") && !csn.is_name("Indexed") {
+        } else if csn.kind() == K::Name && !csn.is_name("DeviceGray") && !csn.is_name("Indexed") {
             let cs = pdf_color::read(doc, &csn, res, 0);
             nc = cs.n as i64;
         }
@@ -1275,13 +1275,11 @@ fn inline_image(doc: &mut Doc, r: &mut Renderer, run: &mut Run, lx: &mut PdfLexe
     // to after EI
     loop {
         let t = lx.token();
-        if t.k == K::Eof || t.is_cmd("EI") {
+        if t.kind() == K::Eof || t.is_cmd("EI") {
             break;
         }
     }
-    let mut s = d.clone();
-    s.k = K::Stream;
-    s.s = data;
+    let s = pdf_obj::stream(d.clone(), data, 0, 0);
     draw_image(doc, run, &s, res);
 }
 
@@ -1289,7 +1287,7 @@ fn inline_image(doc: &mut Doc, r: &mut Renderer, run: &mut Run, lx: &mut PdfLexe
 
 fn pattern_color(doc: &mut Doc, pat: &Obj, res: &Obj) -> Vec<f64> {
     let pd = doc.get_key(res, "Pattern");
-    let p = doc.get_key(&pd, &pat.name);
+    let p = doc.get_key(&pd, pat.word());
     if !p.is_dict() {
         return vec![0.5, 0.5, 0.5];
     }
@@ -1319,7 +1317,7 @@ fn shading_color_at(doc: &mut Doc, sh: &Obj, res: &Obj, t: f64) -> Vec<f64> {
 fn paint_pattern(doc: &mut Doc, r: &mut Renderer, run: &mut Run, pat: &Obj, res: &Obj, fill: bool) {
     let _ = fill;
     let pd = doc.get_key(res, "Pattern");
-    let pref = pd.at(&pat.name);
+    let pref = pd.at(pat.word());
     let p = doc.resolve(&pref);
     if !p.is_dict() {
         return;
@@ -1336,7 +1334,7 @@ fn paint_pattern(doc: &mut Doc, r: &mut Renderer, run: &mut Run, pat: &Obj, res:
         shade(doc, run, &sh, &m, &bx, res);
         return;
     }
-    if ptype == 1 && p.k == K::Stream {
+    if ptype == 1 && p.kind() == K::Stream {
         tile(doc, r, run, &p, &pref, &m, &bx, res);
     }
 }
@@ -1351,7 +1349,7 @@ fn run_base(run: &Run) -> Vec<f64> {
 }
 
 fn tile(doc: &mut Doc, r: &mut Renderer, run: &mut Run, p: &Obj, pref: &Obj, m: &Vec<f64>, bx: &Vec<f64>, res: &Obj) {
-    let num = if pref.k == K::Ref { pref.i() } else { -1 };
+    let num = if pref.kind() == K::Ref { pref.i() } else { -1 };
     if num >= 0 && run.forms.contains(&num) {
         return;
     }
@@ -1457,8 +1455,8 @@ fn shade(doc: &mut Doc, run: &mut Run, sh0: &Obj, m: &Vec<f64>, bx: &Vec<f64>, r
         dom = vec![0.0, 1.0];
     }
     let ext = doc.get_key(&sh, "Extend");
-    let e0 = ext.k == K::Arr && ext.item(0).n == 1.0;
-    let e1 = ext.k == K::Arr && ext.item(1).n == 1.0;
+    let e0 = ext.kind() == K::Arr && ext.item(0).f() == 1.0;
+    let e1 = ext.kind() == K::Arr && ext.item(1).f() == 1.0;
     let a = run.gs.fill_a;
     if (st == 2 || st == 3) && f.ok && coords.len() >= 4 {
         let steps: i64 = 96;

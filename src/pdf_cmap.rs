@@ -113,40 +113,40 @@ impl CMap {
         let mut prev: Vec<Obj> = vec![];
         loop {
             let t = lx.token();
-            if t.k == K::Eof {
+            if t.kind() == K::Eof {
                 break;
             }
             if t.is_cmd("begincodespacerange") {
                 loop {
                     let a = lx.token();
-                    if a.k != K::Str {
+                    if a.kind() != K::Str {
                         break;
                     }
                     let b = lx.token();
-                    c.space_len.push(a.s.len() as i64);
-                    c.space_lo.push(code_of(&a.s));
-                    c.space_hi.push(code_of(&b.s));
+                    c.space_len.push(a.raw().len() as i64);
+                    c.space_lo.push(code_of(a.raw()));
+                    c.space_hi.push(code_of(b.raw()));
                 }
             } else if t.is_cmd("begincidrange") {
                 loop {
                     let a = lx.token();
-                    if a.k != K::Str {
+                    if a.kind() != K::Str {
                         break;
                     }
                     let b = lx.token();
                     let f = lx.token();
-                    c.cid_lo.push(code_of(&a.s));
-                    c.cid_hi.push(code_of(&b.s));
+                    c.cid_lo.push(code_of(a.raw()));
+                    c.cid_hi.push(code_of(b.raw()));
                     c.cid_first.push(f.i());
                 }
             } else if t.is_cmd("begincidchar") {
                 loop {
                     let a = lx.token();
-                    if a.k != K::Str {
+                    if a.kind() != K::Str {
                         break;
                     }
                     let f = lx.token();
-                    let code = code_of(&a.s);
+                    let code = code_of(a.raw());
                     c.cid_lo.push(code);
                     c.cid_hi.push(code);
                     c.cid_first.push(f.i());
@@ -154,43 +154,43 @@ impl CMap {
             } else if t.is_cmd("beginbfchar") {
                 loop {
                     let a = lx.token();
-                    if a.k != K::Str {
+                    if a.kind() != K::Str {
                         break;
                     }
                     let b = lx.token();
-                    let code = code_of(&a.s);
-                    if b.k == K::Str {
-                        c.uni.insert(code, utf16(&b.s));
-                    } else if b.k == K::Name {
-                        c.uni.insert(code, crate::pdf_glyphs::name_to_unicode(&b.name));
+                    let code = code_of(a.raw());
+                    if b.kind() == K::Str {
+                        c.uni.insert(code, utf16(b.raw()));
+                    } else if b.kind() == K::Name {
+                        c.uni.insert(code, crate::pdf_glyphs::name_to_unicode(b.word()));
                     }
                 }
             } else if t.is_cmd("beginbfrange") {
                 loop {
                     let a = lx.token();
-                    if a.k != K::Str {
+                    if a.kind() != K::Str {
                         break;
                     }
                     let b = lx.token();
-                    let lo = code_of(&a.s);
-                    let hi = code_of(&b.s);
+                    let lo = code_of(a.raw());
+                    let hi = code_of(b.raw());
                     let d = lx.object(0);
                     if hi - lo > 65536 || hi < lo {
                         continue;
                     }
-                    if d.k == K::Str {
+                    if d.kind() == K::Str {
                         let mut code = lo;
                         while code <= hi {
-                            c.uni.insert(code, utf16(&plus(&d.s, code - lo)));
+                            c.uni.insert(code, utf16(&plus(d.raw(), code - lo)));
                             code += 1;
                         }
-                    } else if d.k == K::Arr {
+                    } else if d.kind() == K::Arr {
                         let mut code = lo;
                         let mut i: usize = 0;
-                        while code <= hi && i < d.items.len() {
-                            let x = d.items[i].clone();
-                            if x.k == K::Str {
-                                c.uni.insert(code, utf16(&x.s));
+                        while code <= hi && i < d.items().len() {
+                            let x = d.items()[i].clone();
+                            if x.kind() == K::Str {
+                                c.uni.insert(code, utf16(x.raw()));
                             }
                             code += 1;
                             i += 1;
@@ -198,14 +198,14 @@ impl CMap {
                     }
                 }
             } else if t.is_cmd("usecmap") {
-                if !prev.is_empty() && prev[prev.len() - 1].k == K::Name {
-                    c.use_cmap = prev[prev.len() - 1].name.clone();
+                if !prev.is_empty() && prev[prev.len() - 1].kind() == K::Name {
+                    c.use_cmap = prev[prev.len() - 1].word().clone();
                 }
             } else if t.is_cmd("def") && prev.len() >= 2 {
                 let key = prev[prev.len() - 2].clone();
                 let val = prev[prev.len() - 1].clone();
-                if key.is_name("CMapName") && val.k == K::Name {
-                    c.name = val.name.clone();
+                if key.is_name("CMapName") && val.kind() == K::Name {
+                    c.name = val.word().clone();
                 }
                 if key.is_name("WMode") && val.i() == 1 {
                     c.vertical = true;

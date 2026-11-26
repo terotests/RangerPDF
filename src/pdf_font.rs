@@ -250,19 +250,19 @@ impl Font {
 
     pub fn load(doc: &mut Doc, g: &Glyphs, files: &FontFiles, fd: &Obj) -> Font {
         let mut f = Font::empty();
-        f.subtype = doc.get_key(fd, "Subtype").name.clone();
-        f.base = strip_subset(&doc.get_key(fd, "BaseFont").name);
+        f.subtype = doc.get_key(fd, "Subtype").word().clone();
+        f.base = strip_subset(doc.get_key(fd, "BaseFont").word());
         let mut desc_font = fd.clone();
         if f.subtype == "Type0" {
             f.composite = true;
             let enc = doc.get_key(fd, "Encoding");
-            if enc.k == K::Name {
-                f.cmap = CMap::identity(enc.name.ends_with("-V"));
-                if !enc.name.starts_with("Identity") {
+            if enc.kind() == K::Name {
+                f.cmap = CMap::identity(enc.word().ends_with("-V"));
+                if !enc.word().starts_with("Identity") {
                     // a predefined CMap is not available: two-byte codes as CIDs
-                    f.cmap.name = enc.name.clone();
+                    f.cmap.name = enc.word().clone();
                 }
-            } else if enc.k == K::Stream {
+            } else if enc.kind() == K::Stream {
                 let data = doc.stream_data(&enc);
                 f.cmap = CMap::parse(data);
                 if f.cmap.space_len.is_empty() {
@@ -273,12 +273,12 @@ impl Font {
             }
             f.vertical = f.cmap.vertical;
             let df = doc.get_key(fd, "DescendantFonts");
-            let d0 = if df.k == K::Arr { doc.resolve(&df.item(0)) } else { df.clone() };
+            let d0 = if df.kind() == K::Arr { doc.resolve(&df.item(0)) } else { df.clone() };
             if d0.is_dict() {
                 desc_font = d0.clone();
                 f.read_cid_widths(doc, &d0);
                 let ctg = doc.get_key(&d0, "CIDToGIDMap");
-                if ctg.k == K::Stream {
+                if ctg.kind() == K::Stream {
                     let data = doc.stream_data(&ctg);
                     let mut i: usize = 0;
                     while i + 1 < data.len() {
@@ -288,7 +288,7 @@ impl Font {
                     f.cid_to_gid_identity = false;
                 }
                 if f.base.is_empty() {
-                    f.base = strip_subset(&doc.get_key(&d0, "BaseFont").name);
+                    f.base = strip_subset(doc.get_key(&d0, "BaseFont").word());
                 }
             }
         }
@@ -322,7 +322,7 @@ impl Font {
             f.read_encoding(doc, g, fd);
         }
         let tu = doc.get_key(fd, "ToUnicode");
-        if tu.k == K::Stream {
+        if tu.kind() == K::Stream {
             let data = doc.stream_data(&tu);
             f.to_unicode = CMap::parse(data);
             f.has_to_unicode = !f.to_unicode.uni.is_empty();
@@ -388,9 +388,9 @@ impl Font {
 
     fn read_simple_widths(&mut self, doc: &mut Doc, fd: &Obj) {
         let w = doc.get_key(fd, "Widths");
-        if w.k == K::Arr {
+        if w.kind() == K::Arr {
             self.first_char = doc.get_key(fd, "FirstChar").i();
-            for x in w.items.iter() {
+            for x in w.items().iter() {
                 let v = doc.resolve(x);
                 self.widths.push(v.f());
             }
@@ -404,20 +404,20 @@ impl Font {
             self.dw = dw.f();
         }
         let w = doc.get_key(d0, "W");
-        if w.k != K::Arr {
+        if w.kind() != K::Arr {
             return;
         }
         let mut i: usize = 0;
-        let n = w.items.len();
+        let n = w.items().len();
         while i < n {
-            let a = doc.resolve(&w.items[i]);
+            let a = doc.resolve(&w.items()[i]);
             if i + 1 >= n {
                 break;
             }
-            let b = doc.resolve(&w.items[i + 1]);
-            if b.k == K::Arr {
+            let b = doc.resolve(&w.items()[i + 1]);
+            if b.kind() == K::Arr {
                 let mut c = a.i();
-                for x in b.items.iter() {
+                for x in b.items().iter() {
                     let v = doc.resolve(x);
                     self.cid_w.insert(c, v.f());
                     c += 1;
@@ -427,7 +427,7 @@ impl Font {
                 if i + 2 >= n {
                     break;
                 }
-                let v = doc.resolve(&w.items[i + 2]);
+                let v = doc.resolve(&w.items()[i + 2]);
                 let mut c = a.i();
                 let last = b.i();
                 if last - c > 65536 {
@@ -459,13 +459,13 @@ impl Font {
             base = "WinAnsiEncoding".to_string();
         }
         let mut named = false;
-        if enc.k == K::Name {
-            base = enc.name.clone();
+        if enc.kind() == K::Name {
+            base = enc.word().clone();
             named = true;
         } else if enc.is_dict() {
             let be = doc.get_key(&enc, "BaseEncoding");
-            if be.k == K::Name {
-                base = be.name.clone();
+            if be.kind() == K::Name {
+                base = be.word().clone();
                 named = true;
             }
         }
@@ -474,13 +474,13 @@ impl Font {
         if enc.is_dict() {
             let d = doc.get_key(&enc, "Differences");
             let mut code: i64 = 0;
-            for x in d.items.iter() {
+            for x in d.items().iter() {
                 let v = doc.resolve(x);
-                if v.k == K::Num {
+                if v.kind() == K::Num {
                     code = v.i();
-                } else if v.k == K::Name {
+                } else if v.kind() == K::Name {
                     if code >= 0 && code < 256 {
-                        self.enc[code as usize] = v.name.clone();
+                        self.enc[code as usize] = v.word().clone();
                         self.differences[code as usize] = true;
                     }
                     code += 1;
@@ -491,7 +491,7 @@ impl Font {
 
     fn read_program(&mut self, doc: &mut Doc, desc: &Obj) {
         let f2 = doc.get_key(desc, "FontFile2");
-        if f2.k == K::Stream {
+        if f2.kind() == K::Stream {
             let data = doc.stream_data(&f2);
             self.load_sfnt(data);
             if self.prog != PROG_NONE {
@@ -500,9 +500,9 @@ impl Font {
             }
         }
         let f3 = doc.get_key(desc, "FontFile3");
-        if f3.k == K::Stream {
+        if f3.kind() == K::Stream {
             let data = doc.stream_data(&f3);
-            let st = doc.get_key(&f3, "Subtype").name.clone();
+            let st = doc.get_key(&f3, "Subtype").word().clone();
             if st == "OpenType" || (data.len() > 4 && data[0] == 79 && data[1] == 84) || (data.len() > 4 && data[0] == 0 && data[1] == 1) {
                 self.load_sfnt(data);
             } else {
@@ -514,7 +514,7 @@ impl Font {
             }
         }
         let f1 = doc.get_key(desc, "FontFile");
-        if f1.k == K::Stream {
+        if f1.kind() == K::Stream {
             let data = doc.stream_data(&f1);
             let l1 = doc.get_key(&f1, "Length1").i();
             if data.len() > 4 && data[0] == 1 && data[1] == 0 && data[2] == 4 {

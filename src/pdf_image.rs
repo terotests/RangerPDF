@@ -134,7 +134,7 @@ pub fn decode(doc: &mut Doc, s: &Obj, res: &Obj, fill: &Vec<f64>, fill_alpha: f6
     }
     img.w = w;
     img.h = h;
-    let is_mask = doc.get_key(s, "ImageMask").k == K::Bool && doc.get_key(s, "ImageMask").n == 1.0;
+    let is_mask = doc.get_key(s, "ImageMask").kind() == K::Bool && doc.get_key(s, "ImageMask").f() == 1.0;
     let mut bpc = doc.get_key(s, "BitsPerComponent").i();
     if is_mask || bpc <= 0 {
         bpc = if is_mask { 1 } else { 8 };
@@ -170,7 +170,7 @@ pub fn decode(doc: &mut Doc, s: &Obj, res: &Obj, fill: &Vec<f64>, fill_alpha: f6
     let mut cs = if cso.is_null() { pdf_color::device(pdf_color::CS_GRAY) } else { pdf_color::read(doc, &cso, res, 0) };
     if dec.codec == "DCTDecode" {
         let ctv = doc.get_key(&dec.codec_parms, "ColorTransform");
-        let ct: i64 = if ctv.k == K::Num { ctv.i() } else { -1 };
+        let ct: i64 = if ctv.kind() == K::Num { ctv.i() } else { -1 };
         let j = pdf_jpeg::decode(&dec.data, ct);
         if j.ok && j.w > 0 && j.h > 0 {
             // the JPEG's own size and component count win over the dictionary's
@@ -260,7 +260,7 @@ pub fn decode(doc: &mut Doc, s: &Obj, res: &Obj, fill: &Vec<f64>, fill_alpha: f6
 /// The alpha of the image from /SMask, /Mask (an image or a colour key), or empty.
 fn mask_alpha(doc: &mut Doc, s: &Obj, res: &Obj, w: i64, h: i64, samples: &Vec<i64>, n: i64, bpc: i64) -> Vec<u8> {
     let sm = doc.get_key(s, "SMask");
-    if sm.k == K::Stream {
+    if sm.kind() == K::Stream {
         let mw = doc.get_key(&sm, "Width").i();
         let mh = doc.get_key(&sm, "Height").i();
         let mut mb = doc.get_key(&sm, "BitsPerComponent").i();
@@ -292,7 +292,7 @@ fn mask_alpha(doc: &mut Doc, s: &Obj, res: &Obj, w: i64, h: i64, samples: &Vec<i
         }
     }
     let mk = doc.get_key(s, "Mask");
-    if mk.k == K::Stream {
+    if mk.kind() == K::Stream {
         let mw = doc.get_key(&mk, "Width").i();
         let mh = doc.get_key(&mk, "Height").i();
         let d = doc.stream_decoded(&mk);
@@ -315,7 +315,7 @@ fn mask_alpha(doc: &mut Doc, s: &Obj, res: &Obj, w: i64, h: i64, samples: &Vec<i
             return out;
         }
     }
-    if mk.k == K::Arr && n > 0 && !samples.is_empty() {
+    if mk.kind() == K::Arr && n > 0 && !samples.is_empty() {
         let r = mk.nums();
         if r.len() >= (2 * n) as usize {
             let total = (w * h) as usize;

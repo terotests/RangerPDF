@@ -55,8 +55,8 @@ pub fn read(doc: &mut Doc, o: &Obj, res: &Obj, depth: i64) -> ColorSpace {
     if depth > 8 {
         return device(CS_GRAY);
     }
-    if v.k == K::Name {
-        let n = v.name.clone();
+    if v.kind() == K::Name {
+        let n = v.word().clone();
         if n == "DeviceGray" || n == "G" || n == "CalGray" {
             return device(CS_GRAY);
         }
@@ -82,10 +82,10 @@ pub fn read(doc: &mut Doc, o: &Obj, res: &Obj, depth: i64) -> ColorSpace {
         }
         return device(CS_RGB);
     }
-    if v.k != K::Arr || v.items.is_empty() {
+    if v.kind() != K::Arr || v.items().is_empty() {
         return device(CS_RGB);
     }
-    let fam = doc.resolve(&v.items[0]).name.clone();
+    let fam = doc.resolve(&v.items()[0]).word().clone();
     if fam == "ICCBased" {
         let s = doc.resolve(&v.item(1));
         let n = doc.get_key(&s, "N").i();
@@ -119,10 +119,10 @@ pub fn read(doc: &mut Doc, o: &Obj, res: &Obj, depth: i64) -> ColorSpace {
         c.n = 1;
         c.hival = doc.resolve(&v.item(2)).i();
         let lk = doc.resolve(&v.item(3));
-        if lk.k == K::Stream {
+        if lk.kind() == K::Stream {
             c.lookup = doc.stream_data(&lk);
         } else {
-            c.lookup = lk.s.clone();
+            c.lookup = lk.raw().clone();
         }
         c.base.push(base);
         return c;
@@ -134,9 +134,9 @@ pub fn read(doc: &mut Doc, o: &Obj, res: &Obj, depth: i64) -> ColorSpace {
             c.n = 1;
             c.none = names.is_name("None");
         } else {
-            c.n = if names.k == K::Arr { names.items.len() } else { 1 };
-            let mut all_none = names.k == K::Arr && !names.items.is_empty();
-            for x in names.items.iter() {
+            c.n = if names.kind() == K::Arr { names.items().len() } else { 1 };
+            let mut all_none = names.kind() == K::Arr && !names.items().is_empty();
+            for x in names.items().iter() {
                 if !x.is_name("None") {
                     all_none = false;
                 }
@@ -151,7 +151,7 @@ pub fn read(doc: &mut Doc, o: &Obj, res: &Obj, depth: i64) -> ColorSpace {
     if fam == "Pattern" {
         let mut p = device(CS_PATTERN);
         p.n = 0;
-        if v.items.len() > 1 {
+        if v.items().len() > 1 {
             let u = read(doc, &v.item(1), res, depth + 1);
             p.n = u.n;
             p.base.push(u);

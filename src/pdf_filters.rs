@@ -352,7 +352,7 @@ pub fn predict(src: Vec<u8>, p: &Obj) -> Vec<u8> {
 }
 
 fn filter_name(o: &Obj) -> String {
-    let n = o.name.clone();
+    let n = o.word().clone();
     if n == "Fl" {
         return "FlateDecode".to_string();
     }
@@ -382,14 +382,14 @@ fn filter_name(o: &Obj) -> String {
 pub fn decode(raw: &Vec<u8>, filter: &Obj, parms: &Obj) -> Decoded {
     let mut names: Vec<Obj> = vec![];
     let mut ps: Vec<Obj> = vec![];
-    if filter.k == K::Name {
+    if filter.kind() == K::Name {
         names.push(filter.clone());
         ps.push(parms.clone());
-    } else if filter.k == K::Arr {
+    } else if filter.kind() == K::Arr {
         let mut i: usize = 0;
-        while i < filter.items.len() {
-            names.push(filter.items[i].clone());
-            if parms.k == K::Arr {
+        while i < filter.items().len() {
+            names.push(filter.items()[i].clone());
+            if parms.kind() == K::Arr {
                 ps.push(parms.item(i));
             } else if i == 0 {
                 ps.push(parms.clone());
