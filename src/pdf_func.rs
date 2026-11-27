@@ -89,9 +89,9 @@ pub fn read(doc: &mut Doc, o: &Obj, depth: i64) -> Func {
     if depth > 8 {
         return r;
     }
-    if f.k == K::Arr {
+    if f.kind() == K::Arr {
         r.ftype = 100;
-        for x in f.items.iter() {
+        for x in f.items().iter() {
             let p = read(doc, x, depth + 1);
             r.n_out += 1;
             r.parts.push(p);
@@ -109,11 +109,11 @@ pub fn read(doc: &mut Doc, o: &Obj, depth: i64) -> Func {
     }
     r.range = doc.get_key(&f, "Range").nums();
     if r.ftype == 0 {
-        if f.k != K::Stream {
+        if f.kind() != K::Stream {
             return r;
         }
         r.size = vec![];
-        for x in doc.get_key(&f, "Size").items.iter() {
+        for x in doc.get_key(&f, "Size").items().iter() {
             r.size.push(x.i());
         }
         r.bps = doc.get_key(&f, "BitsPerSample").i();
@@ -180,7 +180,7 @@ pub fn read(doc: &mut Doc, o: &Obj, depth: i64) -> Func {
     }
     if r.ftype == 3 {
         let fs = doc.get_key(&f, "Functions");
-        for x in fs.items.iter() {
+        for x in fs.items().iter() {
             let p = read(doc, x, depth + 1);
             if p.n_out > r.n_out {
                 r.n_out = p.n_out;
@@ -193,14 +193,14 @@ pub fn read(doc: &mut Doc, o: &Obj, depth: i64) -> Func {
         return r;
     }
     if r.ftype == 4 {
-        if f.k != K::Stream {
+        if f.kind() != K::Stream {
             return r;
         }
         let data = doc.stream_data(&f);
         let mut lx = PdfLexer::new(data);
         loop {
             let t = lx.token();
-            if t.k == K::Eof {
+            if t.kind() == K::Eof {
                 break;
             }
             r.prog.push(t);
@@ -372,14 +372,14 @@ impl Func {
             if st.len() > 1000 || depth > 50 {
                 return;
             }
-            if t.k == K::Num || t.k == K::Bool {
-                st.push(t.n);
+            if t.kind() == K::Num || t.kind() == K::Bool {
+                st.push(t.f());
                 continue;
             }
-            if t.k != K::Cmd {
+            if t.kind() != K::Cmd {
                 continue;
             }
-            let op = t.name.clone();
+            let op = t.word().clone();
             if op == "}" {
                 return;
             }
@@ -397,7 +397,7 @@ impl Func {
                 }
                 let mut kw = String::new();
                 if pc.i < self.prog.len() {
-                    kw = self.prog[pc.i].name.clone();
+                    kw = self.prog[pc.i].word().clone();
                     pc.i += 1;
                 }
                 let cond = pop(st);

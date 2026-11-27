@@ -127,14 +127,14 @@ impl Crypt {
         c.enc_num = enc_num;
         let filter = e.at("Filter");
         if !filter.is_name("Standard") {
-            c.error = format!("unsupported security handler {}", filter.name);
+            c.error = format!("unsupported security handler {}", filter.word());
             return c;
         }
         let v = e.at("V").i();
         let r = e.at("R").i();
         c.revision = r;
         let em = e.at("EncryptMetadata");
-        if em.k == K::Bool && em.n == 0.0 {
+        if em.kind() == K::Bool && em.f() == 0.0 {
             c.encrypt_metadata = false;
         }
         let mut length = e.at("Length").i();
@@ -163,12 +163,12 @@ impl Crypt {
             c.stm_method = "RC4".to_string();
             c.str_method = "RC4".to_string();
         }
-        let o = e.at("O").s.clone();
-        let u = e.at("U").s.clone();
+        let o = e.at("O").raw().clone();
+        let u = e.at("U").raw().clone();
         if r >= 5 {
             let pw = slice(&utf8(password), 0, 127);
-            let oe = e.at("OE").s.clone();
-            let ue = e.at("UE").s.clone();
+            let oe = e.at("OE").raw().clone();
+            let ue = e.at("UE").raw().clone();
             let u48 = slice(&u, 0, 48);
             let iv: Vec<u8> = vec![0; 16];
             let empty: Vec<u8> = vec![];
@@ -226,10 +226,10 @@ impl Crypt {
     }
 
     fn cf_method(cf: &Obj, name: &Obj) -> String {
-        if !name.is(K::Name) || name.name == "Identity" {
+        if !name.is(K::Name) || name.word() == "Identity" {
             return "None".to_string();
         }
-        let f = cf.at(&name.name);
+        let f = cf.at(name.word());
         let m = f.at("CFM");
         if m.is_name("AESV2") {
             return "AESV2".to_string();
@@ -247,7 +247,7 @@ impl Crypt {
         if !name.is(K::Name) {
             return 0;
         }
-        let l = cf.at(&name.name).at("Length").i();
+        let l = cf.at(name.word()).at("Length").i();
         // some writers give the length in bytes
         if l > 0 && l <= 16 {
             return l * 8;
@@ -375,17 +375,20 @@ impl Crypt {
 
     fn strings(&self, o: Obj, num: i64, gen: i64) -> Obj {
         let mut r = o;
-        if r.k == K::Str {
+        if r.kind() == K::Str {
             let m = self.str_method.clone();
-            r.s = self.decrypt_bytes(&r.s, num, gen, &m);
+            let b = self.decrypt_bytes(r.raw(), num, gen, &m);
+            r.set_raw(b);
             return r;
         }
-        if r.k == K::Arr || r.k == K::Dict || r.k == K::Stream {
-            let mut items: Vec<Obj> = vec![];
-            for x in r.items.iter() {
-                items.push(self.strings(x.clone(), num, gen));
+        if r.kind() == K::Arr || r.kind() == K::Dict || r.kind() == K::Stream {
+            let n = r.len();
+            let mut i: usize = 0;
+            while i < n {
+                let x = self.strings(r.item(i), num, gen);
+                r.set_item(i, x);
+                i += 1;
             }
-            r.items = items;
         }
         r
     }
@@ -395,17 +398,18 @@ impl Crypt {
         if !self.active || num == self.enc_num {
             return o;
         }
-        if o.k == K::Stream {
+        if o.kind() == K::Stream {
             if o.at("Type").is_name("XRef") {
                 return o;
             }
             if o.at("Type").is_name("Metadata") && !self.encrypt_metadata {
                 return o;
             }
-            let data = o.s.clone();
+            let data = o.raw().clone();
             let mut r = self.strings(o, num, gen);
             let m = self.stm_method.clone();
-            r.s = self.decrypt_bytes(&data, num, gen, &m);
+            let b = self.decrypt_bytes(&data, num, gen, &m);
+            r.set_raw(b);
             return r;
         }
         self.strings(o, num, gen)

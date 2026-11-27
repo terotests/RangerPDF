@@ -62,20 +62,20 @@ fn lexer_tests(c: &mut Check) {
     c.eqi("A", d.at("A").i(), 1);
     let b = d.at("B");
     c.eqi("B len", b.len() as i64, 6);
-    c.ok("ref", b.item(0).k == K::Ref && b.item(0).i() == 2);
+    c.ok("ref", b.item(0).kind() == K::Ref && b.item(0).i() == 2);
     c.eq("real", &format!("{}", b.item(1).f()), "3.5");
     c.eqi("neg", b.item(2).i(), -4);
     c.eq("string", &b.item(3).text(), "x(y)");
     c.eq("hex", &b.item(4).text(), "A@");
-    c.eq("name escape", &b.item(5).name, "N m");
-    c.ok("bool", d.at("C").k == K::Bool && d.at("C").n == 1.0);
+    c.eq("name escape", b.item(5).word(), "N m");
+    c.ok("bool", d.at("C").kind() == K::Bool && d.at("C").f() == 1.0);
     let r = lx.object(0);
-    c.ok("top ref", r.k == K::Ref && r.i() == 12);
+    c.ok("top ref", r.kind() == K::Ref && r.i() == 12);
 
     c.test("pdf:lexer", "string escapes");
     let mut l2 = PdfLexer::new(pdf_obj::bytes_of("(a\\nb\\101\\\\c(d)e) <FEFF00e9>"));
     let s = l2.object(0);
-    c.eq("escapes", &hex(&s.s), "610a62415c6328642965");
+    c.eq("escapes", &hex(s.raw()), "610a62415c6328642965");
     let u = l2.object(0);
     c.eq("utf16", &u.text(), "é");
 }

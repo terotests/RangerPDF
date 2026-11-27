@@ -201,7 +201,7 @@ impl Doc {
         if !ok {
             self.repair();
         }
-        if !self.short && !self.trailer.at("Root").is_dict() && self.trailer.at("Root").k != K::Ref {
+        if !self.short && !self.trailer.at("Root").is_dict() && self.trailer.at("Root").kind() != K::Ref {
             self.repair();
         }
         if self.short {
@@ -397,10 +397,10 @@ impl Doc {
 
     fn merge_trailer(&mut self, t: &Obj) {
         let mut i: usize = 0;
-        while i < t.keys.len() {
-            let k = t.keys[i].clone();
+        while i < t.keys().len() {
+            let k = t.keys()[i].clone();
             if !self.trailer.has(&k) {
-                self.trailer.set(&k, t.items[i].clone());
+                self.trailer.set(&k, t.items()[i].clone());
             }
             i += 1;
         }
@@ -484,7 +484,7 @@ impl Doc {
         // a cross-reference stream: `num gen obj << ... >> stream`
         self.lex.pos = off as usize;
         let o = self.read_indirect_at(off as usize, -1);
-        if o.k != K::Stream || !o.at("Type").is_name("XRef") {
+        if o.kind() != K::Stream || !o.at("Type").is_name("XRef") {
             return pdf_obj::null();
         }
         self.read_xref_stream(&o);
@@ -499,12 +499,12 @@ impl Doc {
                 let t = self.lex.object(0);
                 return t;
             }
-            if a.k != K::Num {
+            if a.kind() != K::Num {
                 self.lex.pos = save;
                 return pdf_obj::null();
             }
             let b = self.lex.token();
-            if b.k != K::Num {
+            if b.kind() != K::Num {
                 return pdf_obj::null();
             }
             let first = a.i();
@@ -514,11 +514,11 @@ impl Doc {
                 let o = self.lex.token();
                 let g = self.lex.token();
                 let f = self.lex.token();
-                if o.k != K::Num || g.k != K::Num || f.k != K::Cmd {
+                if o.kind() != K::Num || g.kind() != K::Num || f.kind() != K::Cmd {
                     return pdf_obj::null();
                 }
                 let num = first + i;
-                if f.name == "n" {
+                if f.word() == "n" {
                     self.set_entry(num, 1, o.i(), g.i(), false);
                 } else {
                     self.set_entry(num, 0, 0, 0, false);
@@ -543,8 +543,8 @@ impl Doc {
         }
         let mut index: Vec<i64> = vec![];
         let idx = s.at("Index");
-        if idx.k == K::Arr {
-            for x in idx.items.iter() {
+        if idx.kind() == K::Arr {
+            for x in idx.items().iter() {
                 index.push(x.i());
             }
         } else {
@@ -668,10 +668,10 @@ impl Doc {
             if self.x_type[num] == 1 {
                 let off = self.x_a[num] as usize;
                 let o = self.read_indirect_at(off, num as i64);
-                if o.k == K::Stream && o.at("Type").is_name("ObjStm") {
+                if o.kind() == K::Stream && o.at("Type").is_name("ObjStm") {
                     self.index_objstm(num as i64, &o);
                 }
-                if o.k == K::Stream && o.at("Type").is_name("XRef") {
+                if o.kind() == K::Stream && o.at("Type").is_name("XRef") {
                     self.merge_trailer(&o);
                 }
                 if o.is_dict() && o.at("Type").is_name("Catalog") && o.has("Pages") {
@@ -701,7 +701,7 @@ impl Doc {
         while i < n {
             let a = lx.token();
             let _b = lx.token();
-            if a.k != K::Num {
+            if a.kind() != K::Num {
                 break;
             }
             let num = a.i();
@@ -724,7 +724,7 @@ impl Doc {
         let a = self.lex.token();
         let b = self.lex.token();
         let c = self.lex.token();
-        if a.k != K::Num || b.k != K::Num || !c.is_cmd("obj") {
+        if a.kind() != K::Num || b.kind() != K::Num || !c.is_cmd("obj") {
             return pdf_obj::make(K::Eof);
         }
         if want >= 0 && a.i() != want {
@@ -749,9 +749,9 @@ impl Doc {
             }
             let len_obj = o.at("Length");
             let mut len: i64 = -1;
-            if len_obj.k == K::Num {
+            if len_obj.kind() == K::Num {
                 len = len_obj.i();
-            } else if len_obj.k == K::Ref {
+            } else if len_obj.kind() == K::Ref {
                 let here = self.lex.pos;
                 let m = self.misses;
                 let l = self.resolve(&len_obj);
@@ -759,7 +759,7 @@ impl Doc {
                 if self.misses > m {
                     return pdf_obj::make(K::Eof);
                 }
-                if l.k == K::Num {
+                if l.kind() == K::Num {
                     len = l.i();
                 }
             }
@@ -818,10 +818,7 @@ impl Doc {
                 data[k - p] = self.lex.buf[k];
                 k += 1;
             }
-            o.k = K::Stream;
-            o.s = data;
-            o.n = a.i() as f64;
-            o.g = b.i();
+            o = pdf_obj::stream(o, data, a.i(), b.i());
             self.lex.pos = end;
         } else {
             self.lex.pos = save;
@@ -852,14 +849,14 @@ impl Doc {
             self.busy.truncate(nb0);
             return pdf_obj::null();
         }
-        if o.k == K::Eof && !self.repaired {
+        if o.kind() == K::Eof && !self.repaired {
             // the offset was wrong: read the cross-reference again by scanning
             self.repair();
             o = self.load(num);
         }
         let nb = self.busy.len() - 1;
         self.busy.truncate(nb);
-        if o.k == K::Eof {
+        if o.kind() == K::Eof {
             o = pdf_obj::null();
         }
         if self.misses > m {
@@ -878,7 +875,7 @@ impl Doc {
         if t == 1 {
             let off = self.x_a[u] as usize;
             let mut o = self.read_indirect_at(off, num);
-            if o.k != K::Eof && self.crypt.active {
+            if o.kind() != K::Eof && self.crypt.active {
                 let gen = self.x_b[u];
                 o = self.crypt.decrypt_obj(o, num, gen);
             }
@@ -897,7 +894,7 @@ impl Doc {
 
     fn from_objstm(&mut self, stm: i64, idx: i64, num: i64) -> Obj {
         let s = self.object(stm);
-        if s.k != K::Stream {
+        if s.kind() != K::Stream {
             return pdf_obj::make(K::Eof);
         }
         let d = self.stream_data(&s);
@@ -910,7 +907,7 @@ impl Doc {
         while i < n {
             let a = lx.token();
             let b = lx.token();
-            if a.k != K::Num || b.k != K::Num {
+            if a.kind() != K::Num || b.kind() != K::Num {
                 break;
             }
             nums.push(a.i());
@@ -923,7 +920,7 @@ impl Doc {
         while k < nums.len() {
             lx.pos = (first + offs[k]) as usize;
             let o = lx.object(0);
-            if nums[k] == num && ((k as i64) == idx || found.k == K::Eof) {
+            if nums[k] == num && ((k as i64) == idx || found.kind() == K::Eof) {
                 found = o.clone();
             }
             let other = nums[k];
@@ -937,7 +934,7 @@ impl Doc {
 
     /// `o` itself, or the object it refers to.
     pub fn resolve(&mut self, o: &Obj) -> Obj {
-        if o.k == K::Ref {
+        if o.kind() == K::Ref {
             return self.object(o.i());
         }
         o.clone()
@@ -962,29 +959,29 @@ impl Doc {
             p = self.get_key(s, "DP");
         }
         let mut pr = p.clone();
-        if p.k == K::Arr {
+        if p.kind() == K::Arr {
             pr = pdf_obj::arr();
-            for x in p.items.iter() {
+            for x in p.items().iter() {
                 let y = self.resolve(x);
                 pr.push(y);
             }
         }
         let mut fr = f.clone();
-        if f.k == K::Arr {
+        if f.kind() == K::Arr {
             fr = pdf_obj::arr();
-            for x in f.items.iter() {
+            for x in f.items().iter() {
                 let y = self.resolve(x);
                 fr.push(y);
             }
         }
         if f.is_null() {
             let mut ff = self.get_key(s, "F");
-            if ff.k != K::Name && ff.k != K::Arr {
+            if ff.kind() != K::Name && ff.kind() != K::Arr {
                 ff = pdf_obj::null();
             }
             fr = ff;
         }
-        pdf_filters::decode(&s.s, &fr, &pr)
+        pdf_filters::decode(s.raw(), &fr, &pr)
     }
 
     fn setup_crypt(&mut self, password: &str) {
@@ -998,10 +995,10 @@ impl Doc {
         }
         let id = self.get_key(&self.trailer.clone(), "ID");
         let mut id0: Vec<u8> = vec![];
-        if id.k == K::Arr && id.items.len() > 0 {
-            id0 = id.items[0].s.clone();
+        if id.kind() == K::Arr && id.items().len() > 0 {
+            id0 = id.items()[0].raw().clone();
         }
-        let enc_num: i64 = if e.k == K::Ref { e.i() } else { -1 };
+        let enc_num: i64 = if e.kind() == K::Ref { e.i() } else { -1 };
         let c = Crypt::open(&ed, &id0, password, enc_num);
         if !c.error.is_empty() {
             self.error = c.error.clone();
@@ -1027,7 +1024,7 @@ impl Doc {
         if depth > 64 || self.pages.len() > 100000 {
             return;
         }
-        if node_ref.k == K::Ref {
+        if node_ref.kind() == K::Ref {
             let n = node_ref.i();
             if visited.contains(&n) {
                 self.warn("page tree loop");
@@ -1049,18 +1046,18 @@ impl Doc {
         }
         let kids = self.get_key(&node, "Kids");
         let ty = node.at("Type");
-        if ty.is_name("Page") || (kids.k != K::Arr && !ty.is_name("Pages")) {
-            let num = if node_ref.k == K::Ref { node_ref.i() } else { -1 };
+        if ty.is_name("Page") || (kids.kind() != K::Arr && !ty.is_name("Pages")) {
+            let num = if node_ref.kind() == K::Ref { node_ref.i() } else { -1 };
             self.add_page(&node, &inh, num);
             return;
         }
-        if kids.k == K::Arr {
+        if kids.kind() == K::Arr {
             // a sparse document's flat node (as many pages as kids): a kid
             // that is not here yet is a page read when it is shown, so that
             // opening does not read every page's dictionary
-            let flat = self.sparse && !self.no_lazy && node.at("Count").is_num() && node.at("Count").i() == (kids.items.len() as i64);
-            for kid in kids.items.iter() {
-                if flat && kid.k == K::Ref && !self.object_here(kid.i()) {
+            let flat = self.sparse && !self.no_lazy && node.at("Count").is_num() && node.at("Count").i() == (kids.items().len() as i64);
+            for kid in kids.items().iter() {
+                if flat && kid.kind() == K::Ref && !self.object_here(kid.i()) {
                     self.add_lazy(kid.i(), &inh);
                 } else {
                     self.walk(kid, &inh, visited, depth + 1);
@@ -1115,7 +1112,7 @@ impl Doc {
         }
         let ty = node.at("Type");
         let kids = node.at("Kids");
-        if !node.is_dict() || ty.is_name("Pages") || kids.k == K::Arr {
+        if !node.is_dict() || ty.is_name("Pages") || kids.kind() == K::Arr {
             // not a page after all: the whole tree, every page read
             self.no_lazy = true;
             let old = self.pages.clone();
@@ -1160,7 +1157,7 @@ impl Doc {
         }
         let mut crop = media.clone();
         let cb = self.get_key(inh, "CropBox");
-        if cb.k == K::Arr {
+        if cb.kind() == K::Arr {
             let c = norm_box(&self.resolve_arr(&cb));
             // the crop box is clipped to the media box
             let x0 = if c[0] > media[0] { c[0] } else { media[0] };
@@ -1185,7 +1182,7 @@ impl Doc {
 
     fn resolve_arr(&mut self, a: &Obj) -> Obj {
         let mut r = pdf_obj::arr();
-        for x in a.items.iter() {
+        for x in a.items().iter() {
             let y = self.resolve(x);
             r.push(y);
         }
@@ -1236,13 +1233,13 @@ impl Doc {
         }
         let pd = self.pages[i].dict.clone();
         let c = self.get_key(&pd, "Contents");
-        if c.k == K::Stream {
+        if c.kind() == K::Stream {
             return self.stream_data(&c);
         }
-        if c.k == K::Arr {
-            for x in c.items.iter() {
+        if c.kind() == K::Arr {
+            for x in c.items().iter() {
                 let s = self.resolve(x);
-                if s.k == K::Stream {
+                if s.kind() == K::Stream {
                     let d = self.stream_data(&s);
                     for b in d.iter() {
                         out.push(*b);
@@ -1262,7 +1259,7 @@ impl Doc {
             return String::new();
         }
         let v = self.get_key(&inf, key);
-        if v.k == K::Str {
+        if v.kind() == K::Str {
             return v.text();
         }
         String::new()

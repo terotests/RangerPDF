@@ -120,7 +120,7 @@ impl PdfLexer {
         if (c >= 48 && c <= 57) || c == 43 || c == 45 || c == 46 {
             let save = self.pos;
             let n = self.number();
-            if n.k == K::Num {
+            if n.kind() == K::Num {
                 return n;
             }
             self.pos = save;
@@ -139,12 +139,10 @@ impl PdfLexer {
             return pdf_obj::cmd("?");
         }
         if s == "true" {
-            let mut b = pdf_obj::make(K::Bool);
-            b.n = 1.0;
-            return b;
+            return pdf_obj::boolean(true);
         }
         if s == "false" {
-            return pdf_obj::make(K::Bool);
+            return pdf_obj::boolean(false);
         }
         if s == "null" {
             return pdf_obj::null();
@@ -197,11 +195,10 @@ impl PdfLexer {
         if neg {
             v = 0.0 - v;
         }
-        let mut o = pdf_obj::num(v);
         if !seen_dot {
-            o.g = 1;
+            return pdf_obj::Obj::Num { n: v, int: true };
         }
-        o
+        pdf_obj::num(v)
     }
 
     fn name(&mut self) -> Obj {
@@ -227,7 +224,7 @@ impl PdfLexer {
     }
 
     fn literal(&mut self) -> Obj {
-        let mut o = pdf_obj::make(K::Str);
+        let mut o: Vec<u8> = vec![];
         let mut depth = 1;
         while self.pos < self.buf.len() {
             let c = self.buf[self.pos];
@@ -239,15 +236,15 @@ impl PdfLexer {
                 let e = self.buf[self.pos];
                 self.pos += 1;
                 if e == 110 {
-                    o.s.push(10);
+                    o.push(10);
                 } else if e == 114 {
-                    o.s.push(13);
+                    o.push(13);
                 } else if e == 116 {
-                    o.s.push(9);
+                    o.push(9);
                 } else if e == 98 {
-                    o.s.push(8);
+                    o.push(8);
                 } else if e == 102 {
-                    o.s.push(12);
+                    o.push(12);
                 } else if e == 13 {
                     if self.pos < self.buf.len() && self.buf[self.pos] == 10 {
                         self.pos += 1;
@@ -262,28 +259,28 @@ impl PdfLexer {
                         self.pos += 1;
                         k += 1;
                     }
-                    o.s.push((v & 255) as u8);
+                    o.push((v & 255) as u8);
                 } else {
-                    o.s.push(e);
+                    o.push(e);
                 }
             } else if c == 40 {
                 depth += 1;
-                o.s.push(c);
+                o.push(c);
             } else if c == 41 {
                 depth -= 1;
                 if depth == 0 {
-                    return o;
+                    return pdf_obj::string(o);
                 }
-                o.s.push(c);
+                o.push(c);
             } else {
-                o.s.push(c);
+                o.push(c);
             }
         }
-        o
+        pdf_obj::string(o)
     }
 
     fn hex_string(&mut self) -> Obj {
-        let mut o = pdf_obj::make(K::Str);
+        let mut o: Vec<u8> = vec![];
         let mut hi: i64 = -1;
         while self.pos < self.buf.len() {
             let c = self.buf[self.pos];
@@ -298,14 +295,14 @@ impl PdfLexer {
             if hi < 0 {
                 hi = v;
             } else {
-                o.s.push((hi * 16 + v) as u8);
+                o.push((hi * 16 + v) as u8);
                 hi = -1;
             }
         }
         if hi >= 0 {
-            o.s.push((hi * 16) as u8);
+            o.push((hi * 16) as u8);
         }
-        o
+        pdf_obj::string(o)
     }
 
     /// The next object: a dictionary or array is read whole, and
@@ -316,51 +313,51 @@ impl PdfLexer {
     }
 
     pub fn object_from(&mut self, t: Obj, depth: i64) -> Obj {
-        if t.k == K::Cmd {
-            if t.name == "[" {
-                let mut a = pdf_obj::arr();
+        if t.kind() == K::Cmd {
+            if t.word() == "[" {
+                let mut a: Vec<Obj> = vec![];
                 if depth > 100 {
-                    return a;
+                    return pdf_obj::Obj::Arr(a);
                 }
                 loop {
                     let x = self.token();
-                    if x.k == K::Eof || x.is_cmd("]") {
+                    if x.kind() == K::Eof || x.is_cmd("]") {
                         break;
                     }
                     if x.is_cmd(">>") || x.is_cmd("endobj") || x.is_cmd("stream") {
                         // a broken array: stop where the object ends
-                        self.pos -= x.name.chars().count();
+                        self.pos -= x.word().chars().count();
                         break;
                     }
                     if x.is_cmd("R") {
                         // `a b R` inside an array
-                        let n = a.items.len();
-                        if n >= 2 && a.items[n - 1].k == K::Num && a.items[n - 2].k == K::Num {
-                            let gen = a.items[n - 1].i();
-                            let num = a.items[n - 2].i();
-                            a.items.truncate(n - 2);
-                            a.items.push(pdf_obj::reference(num, gen));
+                        let n = a.len();
+                        if n >= 2 && a[n - 1].kind() == K::Num && a[n - 2].kind() == K::Num {
+                            let gen = a[n - 1].i();
+                            let num = a[n - 2].i();
+                            a.truncate(n - 2);
+                            a.push(pdf_obj::reference(num, gen));
                         }
                         continue;
                     }
                     let v = self.object_from(x, depth + 1);
-                    a.items.push(v);
+                    a.push(v);
                 }
-                return a;
+                return pdf_obj::Obj::Arr(a);
             }
-            if t.name == "<<" {
+            if t.word() == "<<" {
                 let mut d = pdf_obj::dict();
                 if depth > 100 {
                     return d;
                 }
                 loop {
                     let key = self.token();
-                    if key.k == K::Eof || key.is_cmd(">>") {
+                    if key.kind() == K::Eof || key.is_cmd(">>") {
                         break;
                     }
-                    if key.k != K::Name {
+                    if key.kind() != K::Name {
                         if key.is_cmd("endobj") || key.is_cmd("stream") {
-                            self.pos -= key.name.chars().count();
+                            self.pos -= key.word().chars().count();
                             break;
                         }
                         continue;
@@ -368,12 +365,12 @@ impl PdfLexer {
                     let save = self.pos;
                     let vt = self.token();
                     if vt.is_cmd(">>") {
-                        d.set(&key.name, pdf_obj::null());
+                        d.set(key.word(), pdf_obj::null());
                         break;
                     }
-                    if vt.k == K::Name {
+                    if vt.kind() == K::Name {
                         // a value that is a name, or a missing value before the next key
-                        d.set(&key.name, vt);
+                        d.set(key.word(), vt);
                         continue;
                     }
                     if vt.is_cmd("endobj") || vt.is_cmd("stream") {
@@ -381,17 +378,17 @@ impl PdfLexer {
                         break;
                     }
                     let v = self.object_from(vt, depth + 1);
-                    d.set(&key.name, v);
+                    d.set(key.word(), v);
                 }
                 return d;
             }
             return t;
         }
-        if t.k == K::Num && t.g == 1 && t.n >= 0.0 {
+        if t.is_int() && t.f() >= 0.0 {
             // `num gen R`?
             let save = self.pos;
             let t2 = self.token();
-            if t2.k == K::Num && t2.g == 1 {
+            if t2.is_int() {
                 let t3 = self.token();
                 if t3.is_cmd("R") {
                     return pdf_obj::reference(t.i(), t2.i());
